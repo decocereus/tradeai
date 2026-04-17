@@ -1,0 +1,10 @@
+{
+  "name": "@tradeai/agent-runtime",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@mariozechner/pi-coding-agent": "^0.66.1",
+    "@tradeai/domain": "workspace:*",
+    "effect": "^3.21.0"
+  }
+}

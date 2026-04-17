@@ -1,0 +1,16 @@
+{
+  "name": "@tradeai/app-services",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@tradeai/agent-runtime": "workspace:*",
+    "@tradeai/data-sources": "workspace:*",
+    "@tradeai/db": "workspace:*",
+    "@tradeai/domain": "workspace:*",
+    "@tradeai/memory": "workspace:*",
+    "@tradeai/observability": "workspace:*",
+    "@tradeai/portfolio-engine": "workspace:*",
+    "@tradeai/strategy-engine": "workspace:*",
+    "effect": "^3.21.0"
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "name": "@tradeai/portfolio-engine",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@tradeai/domain": "workspace:*"
+  }
+}
+

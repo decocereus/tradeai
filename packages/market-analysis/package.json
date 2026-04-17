@@ -1,0 +1,9 @@
+{
+  "name": "@tradeai/market-analysis",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@tradeai/domain": "workspace:*"
+  }
+}
+

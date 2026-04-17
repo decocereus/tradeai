@@ -1,0 +1,9 @@
+{
+  "name": "@tradeai/domain",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "effect": "^3.21.0"
+  }
+}
+

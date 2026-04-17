@@ -1,0 +1,11 @@
+{
+  "name": "@tradeai/data-sources",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@tradeai/domain": "workspace:*",
+    "@tradeai/market-analysis": "workspace:*",
+    "@tradeai/strategy-engine": "workspace:*",
+    "effect": "^3.21.0"
+  }
+}

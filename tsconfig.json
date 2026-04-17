@@ -1,0 +1,59 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "moduleDetection": "force",
+    "allowImportingTsExtensions": true,
+    "resolveJsonModule": true,
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "types": [
+      "bun-types",
+      "node"
+    ],
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "paths": {
+      "@tradeai/agent-runtime": [
+        "./packages/agent-runtime/src/index.ts"
+      ],
+      "@tradeai/app-services": [
+        "./packages/app-services/src/index.ts"
+      ],
+      "@tradeai/data-sources": [
+        "./packages/data-sources/src/index.ts"
+      ],
+      "@tradeai/db": [
+        "./packages/db/src/index.ts"
+      ],
+      "@tradeai/domain": [
+        "./packages/domain/src/index.ts"
+      ],
+      "@tradeai/market-analysis": [
+        "./packages/market-analysis/src/index.ts"
+      ],
+      "@tradeai/knowledge": [
+        "./packages/knowledge/src/index.ts"
+      ],
+      "@tradeai/memory": [
+        "./packages/memory/src/index.ts"
+      ],
+      "@tradeai/observability": [
+        "./packages/observability/src/index.ts"
+      ],
+      "@tradeai/portfolio-engine": [
+        "./packages/portfolio-engine/src/index.ts"
+      ],
+      "@tradeai/strategy-engine": [
+        "./packages/strategy-engine/src/index.ts"
+      ]
+    }
+  },
+  "include": [
+    "apps/**/*.ts",
+    "packages/**/*.ts",
+    ".pi/**/*.ts"
+  ]
+}

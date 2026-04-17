@@ -1,0 +1,35 @@
+{
+  "name": "tradeai",
+  "private": true,
+  "packageManager": "bun@1.3.5",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:tui": "bun run apps/tui/src/index.ts",
+    "test": "bun test",
+    "typecheck": "bunx tsgo -p tsconfig.json",
+    "typecheck:tsc": "bunx tsc -p tsconfig.json --noEmit",
+    "lint": "bunx oxlint .",
+    "db:start": "docker compose up -d postgres",
+    "db:stop": "docker compose down",
+    "db:push": "bunx drizzle-kit push",
+    "check": "bun run lint && bun run typecheck:tsc && bun run test"
+  },
+  "dependencies": {
+    "@mariozechner/pi-ai": "^0.66.1",
+    "@mariozechner/pi-coding-agent": "^0.66.1",
+    "drizzle-orm": "^0.45.2",
+    "effect": "^3.21.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.6.1",
+    "@types/pg": "^8.15.6",
+    "@typescript/native-preview": "^7.0.0-dev.20260409.1",
+    "bun-types": "^1.3.5",
+    "drizzle-kit": "^0.31.4",
+    "oxlint": "^1.59.0",
+    "typescript": "^5.9.3"
+  }
+}

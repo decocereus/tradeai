@@ -1,0 +1,9 @@
+{
+  "name": "@tradeai/strategy-engine",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@tradeai/domain": "workspace:*"
+  }
+}
+

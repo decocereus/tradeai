@@ -1,0 +1,10 @@
+{
+  "name": "@tradeai/memory",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@tradeai/domain": "workspace:*",
+    "@tradeai/portfolio-engine": "workspace:*",
+    "effect": "^3.21.0"
+  }
+}
