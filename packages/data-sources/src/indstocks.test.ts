@@ -38,6 +38,15 @@ describe("data-sources / indstocks", () => {
     });
   });
 
+  it("explains rejected INDstocks credentials", async () => {
+    const fetchStub = (async () =>
+      new Response(JSON.stringify({ status: "error" }), { status: 401 })) as unknown as typeof fetch;
+
+    await expect(Effect.runPromise(fetchIndstocksHoldings("expired-token", fetchStub))).rejects.toThrow(
+      "Check INDSTOCKS_ACCESS_TOKEN; the configured token was rejected by INDstocks.",
+    );
+  });
+
   it("maps holdings records", () => {
     const holding = mapIndstocksHolding({
       security_id: "12345",

@@ -72,6 +72,14 @@ export const createIndstocksHeaders = (accessToken?: string): HeadersInit => ({
   Authorization: resolveIndstocksAccessToken(accessToken),
 });
 
+const buildIndstocksHttpError = (resource: string, response: Response) => {
+  const authHint =
+    response.status === 401
+      ? ` Check ${INDSTOCKS_ACCESS_TOKEN_ENV}; the configured token was rejected by INDstocks.`
+      : "";
+  return new Error(`INDstocks ${resource} fetch failed with status ${response.status}.${authHint}`);
+};
+
 export const buildIndstocksScripCode = (
   securityId: string,
   exchangeSegment = "NSE_EQ",
@@ -214,7 +222,7 @@ export const fetchIndstocksMarketQuotes = (
         headers: createIndstocksHeaders(accessToken),
       });
       if (!response.ok) {
-        throw new Error(`INDstocks market quote fetch failed with status ${response.status}`);
+        throw buildIndstocksHttpError("market quote", response);
       }
 
       const payload = (await response.json()) as IndstocksMarketQuoteResponse;
@@ -266,7 +274,7 @@ export const fetchIndstocksHistoricalData = (
         headers: createIndstocksHeaders(accessToken),
       });
       if (!response.ok) {
-        throw new Error(`INDstocks historical data fetch failed with status ${response.status}`);
+        throw buildIndstocksHttpError("historical data", response);
       }
 
       return parseIndstocksHistoricalDataResponse(
@@ -286,7 +294,7 @@ export const fetchIndstocksHoldings = (
         headers: createIndstocksHeaders(accessToken),
       });
       if (!response.ok) {
-        throw new Error(`INDstocks holdings fetch failed with status ${response.status}`);
+        throw buildIndstocksHttpError("holdings", response);
       }
 
       const payload = (await response.json()) as IndstocksHoldingsApiResponse;
@@ -320,7 +328,7 @@ export const fetchIndstocksTradeBook = (
         headers: createIndstocksHeaders(accessToken),
       });
       if (!response.ok) {
-        throw new Error(`INDstocks trade-book fetch failed with status ${response.status}`);
+        throw buildIndstocksHttpError("trade-book", response);
       }
 
       return parseIndstocksTradeBookResponse((await response.json()) as IndstocksTradeBookApiResponse);
