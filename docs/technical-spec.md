@@ -96,7 +96,7 @@ This is the current implemented layout.
 | Path | Purpose |
 | --- | --- |
 | `apps/tui` | Customized Pi-based operator console |
-| `apps/api` | Reserved for later, not yet implemented |
+| `apps/api` | Thin HTTP interface over `createTradeAiWorkflowService()` |
 | `packages/domain` | Shared types, schemas, enums, recommendation contracts |
 | `packages/db` | Drizzle schema, migrations, and queries |
 | `packages/data-sources` | Connectors for market, fundamentals, funds, and knowledge ingestion |

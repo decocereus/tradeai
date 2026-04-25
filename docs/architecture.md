@@ -16,7 +16,9 @@ This is intentionally concise and implementation-oriented.
 ```mermaid
 flowchart LR
     U["User"] --> T["apps/tui"]
+    U --> API["apps/api"]
     T --> S["app-services workflow service"]
+    API --> S
     S --> DS["data-sources"]
     DS --> DB["db (Postgres now, pgvector later)"]
     DB --> ST["strategy-engine"]
@@ -25,7 +27,6 @@ flowchart LR
     M --> A
     A --> S
     S --> T
-    S --> API["apps/api (optional)"]
 ```
 
 ## Architecture Layers
@@ -62,7 +63,7 @@ flowchart TB
 flowchart TB
     subgraph Apps
         TUI["apps/tui"]
-        API["apps/api (optional)"]
+        API["apps/api"]
     end
 
     subgraph Packages
@@ -98,6 +99,7 @@ flowchart TB
 | Module | Responsibility | Main inputs | Main outputs |
 | --- | --- | --- | --- |
 | `apps/tui` | Operator UI for runs and review | `createTradeAiWorkflowService()`, state | commands, trade entries |
+| `apps/api` | HTTP interface for workflow reads | `createTradeAiWorkflowService()`, request params | JSON workflow results |
 | `app-services` | Public workflow port plus internal workflow modules | typed workflow inputs | completed workflows |
 | `data-sources` | Pulls market and source data | APIs, feeds, files | normalized raw records |
 | `knowledge` | Distills transcripts and letters | transcript text, letters | `KnowledgeDocument`, `KnowledgeClaim` |
@@ -176,4 +178,4 @@ The current runtime is:
 - using `INDstocks` for live broker data
 - using public data sources for enrichment
 
-`apps/api` still remains optional until we need background scheduling or external hooks.
+`apps/api` is now a thin HTTP interface over `createTradeAiWorkflowService()`. It should remain read-first until background scheduling, writes, or external hooks need explicit product rules.

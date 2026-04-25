@@ -108,6 +108,20 @@ bun run dev:tui -- --events "VEDANTA"
 bun run dev:tui -- --amfi "parag parikh"
 ```
 
+### API server
+
+```bash
+bun run dev:api
+```
+
+Initial read-only endpoints:
+
+- `GET /health`
+- `GET /portfolio/dashboard?broker=indstocks`
+- `GET /market/equities/search?q=RELIANCE`
+- `GET /market/quotes?instrumentKey=NSE_EQ|INE002A01018`
+- `GET /research/equity?q=RELIANCE`
+
 ### Pi session path
 
 ```bash

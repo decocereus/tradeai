@@ -1,0 +1,10 @@
+{
+  "name": "@tradeai/api",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@tradeai/app-services": "workspace:*",
+    "effect": "^3.21.0"
+  }
+}
+
