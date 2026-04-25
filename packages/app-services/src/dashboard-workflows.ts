@@ -1,6 +1,3 @@
-import {
-  loadPreferredPortfolioDashboardRepositoryData,
-} from "@tradeai/db";
 import type {
   BrokerPortfolioReviewReport,
   BrokerSource,
@@ -19,12 +16,17 @@ import {
 } from "@tradeai/memory";
 import { Effect } from "effect";
 
+import {
+  createTradeAiWorkflowDependencies,
+  type TradeAiWorkflowDependencies,
+} from "./ports.ts";
 import { buildBrokerPortfolioReviewReport } from "./review-workflows.ts";
 
 const DASHBOARD_SNAPSHOT_LIMIT = 5;
 const DASHBOARD_REVIEW_LIMIT = 5;
 const DASHBOARD_STREAK_LIMIT = 5;
 const DASHBOARD_HOLDING_LIMIT = 5;
+const defaultDependencies = createTradeAiWorkflowDependencies();
 
 const toHoldingResearchReview = (entry: HoldingReviewHistoryEntry): HoldingResearchReview => ({
   symbol: entry.symbol,
@@ -147,10 +149,14 @@ export const buildTodaysActionList = (report: {
   return actions.slice(0, 6);
 };
 
-export const getPortfolioDashboard = (preferredBroker?: BrokerSource, databaseUrl?: string) =>
+export const getPortfolioDashboard = (
+  preferredBroker?: BrokerSource,
+  databaseUrl?: string,
+  dependencies: TradeAiWorkflowDependencies = defaultDependencies,
+) =>
   Effect.gen(function* () {
     const dashboardData = yield* Effect.tryPromise(() =>
-      loadPreferredPortfolioDashboardRepositoryData(
+      dependencies.repositories.loadPortfolioDashboardData(
         preferredBroker,
         databaseUrl,
         DASHBOARD_SNAPSHOT_LIMIT,

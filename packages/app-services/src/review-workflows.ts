@@ -1,7 +1,3 @@
-import {
-  loadHoldingReviewHistory,
-  persistHoldingReviewReportToDatabase,
-} from "@tradeai/db";
 import type {
   BrokerPortfolioDecisionReport,
   BrokerPortfolioReviewReport,
@@ -37,8 +33,13 @@ import {
   runIndstocksPositionResearch,
   runPublicEquityResearch,
 } from "./research-workflows.ts";
+import {
+  createTradeAiWorkflowDependencies,
+  type TradeAiWorkflowDependencies,
+} from "./ports.ts";
 
 const log = createLogger("app-services");
+const defaultDependencies = createTradeAiWorkflowDependencies();
 
 export interface ReviewResearchRunners {
   runBrokerPositionResearch: (
@@ -231,9 +232,15 @@ export const reviewPortfolioPositionsAgainstResearch = (input: ReviewPortfolioPo
   });
 
 export const reviewBrokerHoldingsAgainstResearch = (input: BrokerPortfolioReviewInput = {}) =>
+  reviewBrokerHoldingsAgainstResearchWithDependencies(input);
+
+export const reviewBrokerHoldingsAgainstResearchWithDependencies = (
+  input: BrokerPortfolioReviewInput = {},
+  dependencies: TradeAiWorkflowDependencies = defaultDependencies,
+) =>
   Effect.gen(function* () {
     log.info({ action: "reviewBrokerHoldingsAgainstResearch" }, "reviewing live holdings against research");
-    const positions = yield* getBrokerPortfolioPositions(input);
+    const positions = yield* getBrokerPortfolioPositions(input, dependencies);
     return yield* reviewPortfolioPositionsAgainstResearch({
       positions,
       broker: "indstocks",
@@ -253,16 +260,26 @@ export const buildBrokerPortfolioDecisionReport = (
 });
 
 export const reviewSyncedBrokerPortfolio = (input: BrokerPortfolioReviewInput = {}) =>
+  reviewSyncedBrokerPortfolioWithDependencies(input);
+
+export const reviewSyncedBrokerPortfolioWithDependencies = (
+  input: BrokerPortfolioReviewInput = {},
+  dependencies: TradeAiWorkflowDependencies = defaultDependencies,
+) =>
   Effect.gen(function* () {
     log.info({ action: "reviewSyncedBrokerPortfolio" }, "building combined portfolio decision report");
-    const sync = yield* syncBrokerPortfolio(input);
-    const review = yield* reviewBrokerHoldingsAgainstResearch(input);
+    const sync = yield* syncBrokerPortfolio(input, dependencies);
+    const review = yield* reviewBrokerHoldingsAgainstResearchWithDependencies(input, dependencies);
     const reviewsPersisted =
-      sync.persisted && canPersistPortfolioMemory(input.databaseUrl)
+      sync.persisted && canPersistPortfolioMemory(input.databaseUrl, dependencies)
         ? (
             yield* Effect.tryPromise(() =>
               timed("app-services", "reviewSyncedBrokerPortfolio.persistReviewHistory", () =>
-                persistHoldingReviewReportToDatabase(sync.currentSnapshotId, review, input.databaseUrl),
+                dependencies.repositories.persistHoldingReviewReport(
+                  sync.currentSnapshotId,
+                  review,
+                  input.databaseUrl,
+                ),
               ),
             )
           ).reviewsInserted
@@ -284,8 +301,14 @@ export const reviewImportedPortfolioAgainstResearch = (input: ManualPortfolioRev
   });
 
 export const reviewImportedPortfolioDecision = (input: ManualPortfolioDecisionInput) =>
+  reviewImportedPortfolioDecisionWithDependencies(input);
+
+export const reviewImportedPortfolioDecisionWithDependencies = (
+  input: ManualPortfolioDecisionInput,
+  dependencies: TradeAiWorkflowDependencies = defaultDependencies,
+) =>
   Effect.gen(function* () {
-    const imported = yield* importManualPortfolioSnapshot(input);
+    const imported = yield* importManualPortfolioSnapshot(input, dependencies);
     const review = yield* reviewPortfolioPositionsAgainstResearch(
       {
         positions: imported.snapshot.positions,
@@ -295,11 +318,12 @@ export const reviewImportedPortfolioDecision = (input: ManualPortfolioDecisionIn
       },
     );
     const reviewsPersisted =
-      imported.report.persisted && canPersistPortfolioMemory(input.persistence?.databaseUrl)
+      imported.report.persisted &&
+        canPersistPortfolioMemory(input.persistence?.databaseUrl, dependencies)
         ? (
             yield* Effect.tryPromise(() =>
               timed("app-services", "reviewImportedPortfolioDecision.persistReviewHistory", () =>
-                persistHoldingReviewReportToDatabase(
+                dependencies.repositories.persistHoldingReviewReport(
                   imported.snapshot.snapshotId,
                   review,
                   input.persistence?.databaseUrl,
@@ -316,18 +340,23 @@ export const getHoldingReviewTrend = (
   symbol: string,
   broker?: BrokerSource,
   databaseUrl?: string,
+  dependencies: TradeAiWorkflowDependencies = defaultDependencies,
 ) =>
   Effect.gen(function* () {
     if (broker) {
       const history = yield* Effect.tryPromise(() =>
-        loadHoldingReviewHistory(symbol, broker, databaseUrl),
+        dependencies.repositories.loadHoldingReviewHistory(symbol, broker, databaseUrl),
       );
       return summarizeHoldingReviewTrend(symbol, history);
     }
 
     const [manualHistory, brokerHistory] = yield* Effect.all([
-      Effect.tryPromise(() => loadHoldingReviewHistory(symbol, "manual_csv", databaseUrl)),
-      Effect.tryPromise(() => loadHoldingReviewHistory(symbol, "indstocks", databaseUrl)),
+      Effect.tryPromise(() =>
+        dependencies.repositories.loadHoldingReviewHistory(symbol, "manual_csv", databaseUrl),
+      ),
+      Effect.tryPromise(() =>
+        dependencies.repositories.loadHoldingReviewHistory(symbol, "indstocks", databaseUrl),
+      ),
     ]);
 
     const manualTrend = summarizeHoldingReviewTrend(symbol, manualHistory);

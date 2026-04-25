@@ -50,9 +50,19 @@ New interfaces should depend on:
 
 ```ts
 import { createTradeAiWorkflowService } from "@tradeai/app-services";
+
+const tradeAi = createTradeAiWorkflowService({
+  config: {
+    brokerAccessToken,
+    marketAccessToken,
+    databaseUrl,
+    allowPublicResearchFallback,
+    persistPortfolioSnapshots,
+  },
+});
 ```
 
-The service is the supported boundary for TUI, future API routes, web UI, and plugin/agent integrations. Internal modules such as `research-workflows`, `portfolio-workflows`, and `review-workflows` remain useful for focused package tests and implementation work, but interface code should not import them directly.
+The service is the supported boundary for TUI, future API routes, web UI, and plugin/agent integrations. Runtime config, repositories, and source adapters are injected at service construction. Internal modules such as `research-workflows`, `portfolio-workflows`, and `review-workflows` remain useful for focused package tests and implementation work, but interface code should not import them directly.
 
 ## First Runnable Slice
 

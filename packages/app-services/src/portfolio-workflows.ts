@@ -1,15 +1,7 @@
 import {
-  fetchIndstocksHoldings,
-  fetchIndstocksTradeBook,
-  fetchUpstoxNseInstrumentProfiles,
   importManualHoldingsFromFile,
   importManualTradeBookFromFile,
 } from "@tradeai/data-sources";
-import {
-  hasConfiguredDatabaseUrl,
-  loadLatestPortfolioSnapshot,
-  persistPortfolioSnapshotToDatabase,
-} from "@tradeai/db";
 import type {
   BrokerHolding,
   PortfolioMemorySnapshot,
@@ -26,7 +18,14 @@ import {
 } from "@tradeai/portfolio-engine";
 import { Effect } from "effect";
 
+import {
+  createTradeAiWorkflowDependencies,
+  type TradeAiWorkflowDependencies,
+} from "./ports.ts";
+
 const log = createLogger("app-services");
+
+const defaultDependencies = createTradeAiWorkflowDependencies();
 
 export interface PortfolioPersistenceOptions {
   databaseUrl?: string;
@@ -36,6 +35,7 @@ export interface PortfolioPersistenceOptions {
 export interface BrokerPortfolioWorkflowInput {
   accessToken?: string;
   databaseUrl?: string;
+  persist?: boolean;
 }
 
 export interface BrokerTradeBookInput {
@@ -49,21 +49,29 @@ export interface ManualPortfolioImportInput {
   persistence?: PortfolioPersistenceOptions;
 }
 
-export const canPersistPortfolioMemory = (databaseUrl?: string) =>
-  hasConfiguredDatabaseUrl(databaseUrl);
+export const canPersistPortfolioMemory = (
+  databaseUrl?: string,
+  dependencies: TradeAiWorkflowDependencies = defaultDependencies,
+) => dependencies.repositories.hasConfiguredDatabaseUrl(databaseUrl);
 
-const shouldPersistPortfolioMemory = (options?: PortfolioPersistenceOptions) =>
-  options?.persist === false ? false : canPersistPortfolioMemory(options?.databaseUrl);
+const shouldPersistPortfolioMemory = (
+  options?: PortfolioPersistenceOptions,
+  dependencies: TradeAiWorkflowDependencies = defaultDependencies,
+) =>
+  options?.persist === false
+    ? false
+    : dependencies.repositories.hasConfiguredDatabaseUrl(options?.databaseUrl);
 
 export const enrichBrokerHoldingsWithInstrumentNames = (
   holdings: readonly BrokerHolding[],
+  dependencies: TradeAiWorkflowDependencies = defaultDependencies,
 ) =>
   Effect.gen(function* () {
     if (holdings.length === 0) {
       return [];
     }
 
-    const profiles = yield* fetchUpstoxNseInstrumentProfiles().pipe(
+    const profiles = yield* dependencies.marketSources.fetchNseInstrumentProfiles().pipe(
       Effect.catchAll((error) =>
         Effect.sync(() => {
           log.warn(
@@ -92,23 +100,32 @@ export const enrichBrokerHoldingsWithInstrumentNames = (
     });
   });
 
-export const getBrokerHoldings = (input: BrokerPortfolioWorkflowInput = {}) =>
+export const getBrokerHoldings = (
+  input: BrokerPortfolioWorkflowInput = {},
+  dependencies: TradeAiWorkflowDependencies = defaultDependencies,
+) =>
   Effect.gen(function* () {
-    const holdings = yield* fetchIndstocksHoldings(input.accessToken);
-    return yield* enrichBrokerHoldingsWithInstrumentNames(holdings);
+    const holdings = yield* dependencies.brokerSources.fetchBrokerHoldings(input.accessToken);
+    return yield* enrichBrokerHoldingsWithInstrumentNames(holdings, dependencies);
   });
 
-export const getBrokerTradeBook = (input: BrokerTradeBookInput = {}) =>
-  fetchIndstocksTradeBook(input.segment ?? "EQUITY", input.accessToken);
+export const getBrokerTradeBook = (
+  input: BrokerTradeBookInput = {},
+  dependencies: TradeAiWorkflowDependencies = defaultDependencies,
+) => dependencies.brokerSources.fetchBrokerTradeBook(input.segment ?? "EQUITY", input.accessToken);
 
-export const getBrokerPortfolioPositions = (input: BrokerPortfolioWorkflowInput = {}) =>
-  getBrokerHoldings(input).pipe(Effect.map(normalizeBrokerHoldings));
+export const getBrokerPortfolioPositions = (
+  input: BrokerPortfolioWorkflowInput = {},
+  dependencies: TradeAiWorkflowDependencies = defaultDependencies,
+) => getBrokerHoldings(input, dependencies).pipe(Effect.map(normalizeBrokerHoldings));
 
 export const getManualPortfolioPositions = (holdingsCsvPath: string) =>
   importManualHoldingsFromFile(holdingsCsvPath).pipe(Effect.map(normalizeBrokerHoldings));
 
-export const getBrokerPortfolioSummary = (input: BrokerPortfolioWorkflowInput = {}) =>
-  getBrokerPortfolioPositions(input).pipe(Effect.map(summarizePortfolioPositions));
+export const getBrokerPortfolioSummary = (
+  input: BrokerPortfolioWorkflowInput = {},
+  dependencies: TradeAiWorkflowDependencies = defaultDependencies,
+) => getBrokerPortfolioPositions(input, dependencies).pipe(Effect.map(summarizePortfolioPositions));
 
 export const summarizeBrokerHoldingsCollection = (holdings: readonly BrokerHolding[]) =>
   summarizePortfolioPositions(normalizeBrokerHoldings(holdings));
@@ -116,8 +133,11 @@ export const summarizeBrokerHoldingsCollection = (holdings: readonly BrokerHoldi
 export const getManualPortfolioSummary = (holdingsCsvPath: string) =>
   getManualPortfolioPositions(holdingsCsvPath).pipe(Effect.map(summarizePortfolioPositions));
 
-export const getBrokerPortfolioMemorySnapshot = (input: BrokerPortfolioWorkflowInput = {}) =>
-  getBrokerPortfolioPositions(input).pipe(
+export const getBrokerPortfolioMemorySnapshot = (
+  input: BrokerPortfolioWorkflowInput = {},
+  dependencies: TradeAiWorkflowDependencies = defaultDependencies,
+) =>
+  getBrokerPortfolioPositions(input, dependencies).pipe(
     Effect.map((positions) => buildPortfolioMemorySnapshot(positions, "indstocks")),
   );
 
@@ -128,16 +148,20 @@ export const getManualPortfolioMemorySnapshot = (holdingsCsvPath: string) =>
 
 export const persistBrokerPortfolioMemorySnapshot = (
   input: BrokerPortfolioWorkflowInput = {},
+  dependencies: TradeAiWorkflowDependencies = defaultDependencies,
 ) =>
   Effect.gen(function* () {
-    const snapshot = yield* getBrokerPortfolioMemorySnapshot(input);
-    const fills = yield* getBrokerTradeBook({
-      segment: "EQUITY",
-      ...(input.accessToken ? { accessToken: input.accessToken } : {}),
-    });
+    const snapshot = yield* getBrokerPortfolioMemorySnapshot(input, dependencies);
+    const fills = yield* getBrokerTradeBook(
+      {
+        segment: "EQUITY",
+        ...(input.accessToken ? { accessToken: input.accessToken } : {}),
+      },
+      dependencies,
+    );
     const result = yield* Effect.tryPromise(() =>
       timed("app-services", "persistBrokerPortfolioMemorySnapshot", () =>
-        persistPortfolioSnapshotToDatabase(snapshot, fills, input.databaseUrl),
+        dependencies.repositories.persistPortfolioSnapshot(snapshot, fills, input.databaseUrl),
       ),
     );
 
@@ -150,11 +174,12 @@ export const persistBrokerPortfolioMemorySnapshot = (
 
 export const diffBrokerPortfolioAgainstLatestSnapshot = (
   input: BrokerPortfolioWorkflowInput = {},
+  dependencies: TradeAiWorkflowDependencies = defaultDependencies,
 ) =>
   Effect.gen(function* () {
-    const current = yield* getBrokerPortfolioMemorySnapshot(input);
+    const current = yield* getBrokerPortfolioMemorySnapshot(input, dependencies);
     const previous = yield* Effect.tryPromise(() =>
-      loadLatestPortfolioSnapshot("indstocks", input.databaseUrl),
+      dependencies.repositories.loadLatestPortfolioSnapshot("indstocks", input.databaseUrl),
     );
     const diff = diffPortfolioMemorySnapshots(previous, current);
 
@@ -194,24 +219,33 @@ export const buildPortfolioSyncReport = (
   };
 };
 
-export const syncBrokerPortfolio = (input: BrokerPortfolioWorkflowInput = {}) =>
+export const syncBrokerPortfolio = (
+  input: BrokerPortfolioWorkflowInput = {},
+  dependencies: TradeAiWorkflowDependencies = defaultDependencies,
+) =>
   Effect.gen(function* () {
-    const dbConfigured = canPersistPortfolioMemory(input.databaseUrl);
+    const dbConfigured = canPersistPortfolioMemory(input.databaseUrl, dependencies);
+    const shouldPersist = input.persist === false ? false : dbConfigured;
     log.info({ action: "syncBrokerPortfolio", dbConfigured }, "running portfolio sync");
-    const current = yield* getBrokerPortfolioMemorySnapshot(input);
-    const fills = yield* getBrokerTradeBook({
-      segment: "EQUITY",
-      ...(input.accessToken ? { accessToken: input.accessToken } : {}),
-    });
+    const current = yield* getBrokerPortfolioMemorySnapshot(input, dependencies);
+    const fills = yield* getBrokerTradeBook(
+      {
+        segment: "EQUITY",
+        ...(input.accessToken ? { accessToken: input.accessToken } : {}),
+      },
+      dependencies,
+    );
 
     const previous = dbConfigured
-      ? yield* Effect.tryPromise(() => loadLatestPortfolioSnapshot("indstocks", input.databaseUrl))
+      ? yield* Effect.tryPromise(() =>
+          dependencies.repositories.loadLatestPortfolioSnapshot("indstocks", input.databaseUrl),
+        )
       : undefined;
 
-    const persistence = dbConfigured
+    const persistence = shouldPersist
       ? yield* Effect.tryPromise(() =>
           timed("app-services", "syncBrokerPortfolio.persistSnapshot", () =>
-            persistPortfolioSnapshotToDatabase(current, fills, input.databaseUrl),
+            dependencies.repositories.persistPortfolioSnapshot(current, fills, input.databaseUrl),
           ),
         )
       : undefined;
@@ -219,22 +253,32 @@ export const syncBrokerPortfolio = (input: BrokerPortfolioWorkflowInput = {}) =>
     return buildPortfolioSyncReport(previous, current, fills.length, dbConfigured, persistence);
   });
 
-export const importManualPortfolioSnapshot = (input: ManualPortfolioImportInput) =>
+export const importManualPortfolioSnapshot = (
+  input: ManualPortfolioImportInput,
+  dependencies: TradeAiWorkflowDependencies = defaultDependencies,
+) =>
   Effect.gen(function* () {
     const positions = yield* getManualPortfolioPositions(input.holdingsCsvPath);
     const snapshot = buildPortfolioMemorySnapshot(positions, "manual_csv");
     const fills = input.tradesCsvPath
       ? yield* importManualTradeBookFromFile(input.tradesCsvPath)
       : [];
-    const dbConfigured = shouldPersistPortfolioMemory(input.persistence);
+    const dbConfigured = shouldPersistPortfolioMemory(input.persistence, dependencies);
     const previous = dbConfigured
       ? yield* Effect.tryPromise(() =>
-          loadLatestPortfolioSnapshot("manual_csv", input.persistence?.databaseUrl),
+          dependencies.repositories.loadLatestPortfolioSnapshot(
+            "manual_csv",
+            input.persistence?.databaseUrl,
+          ),
         )
       : undefined;
     const persistence = dbConfigured
       ? yield* Effect.tryPromise(() =>
-          persistPortfolioSnapshotToDatabase(snapshot, fills, input.persistence?.databaseUrl),
+          dependencies.repositories.persistPortfolioSnapshot(
+            snapshot,
+            fills,
+            input.persistence?.databaseUrl,
+          ),
         )
       : undefined;
 

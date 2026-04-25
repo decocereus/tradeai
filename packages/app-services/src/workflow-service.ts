@@ -20,19 +20,28 @@ import {
   type ManualPortfolioImportInput,
 } from "./portfolio-workflows.ts";
 import {
-  runDemoResearchSnapshot,
+  runDemoResearchSnapshotWithDependencies,
   runEquityResearch,
+  runIndstocksPositionResearch,
+  runPublicEquityResearch,
   type EquityResearchInput,
 } from "./research-workflows.ts";
 import {
   getHoldingReviewTrend,
-  reviewBrokerHoldingsAgainstResearch,
-  reviewImportedPortfolioDecision,
-  reviewSyncedBrokerPortfolio,
+  reviewBrokerHoldingsAgainstResearchWithDependencies,
+  reviewImportedPortfolioDecisionWithDependencies,
+  reviewSyncedBrokerPortfolioWithDependencies,
   type BrokerPortfolioReviewInput,
+  type ReviewResearchRunners,
   type ManualPortfolioDecisionInput,
 } from "./review-workflows.ts";
 import { getPortfolioDashboard } from "./dashboard-workflows.ts";
+import {
+  createTradeAiWorkflowDependencies,
+  type CreateTradeAiWorkflowServiceOptions,
+  type TradeAiRuntimeConfig,
+  type TradeAiWorkflowDependencies,
+} from "./ports.ts";
 
 export interface EquityQuoteSnapshotsInput {
   instrumentKeys: readonly string[];
@@ -50,41 +59,215 @@ export interface HoldingReviewTrendInput {
   databaseUrl?: string;
 }
 
-export const createTradeAiWorkflowService = () => ({
-  canPersistPortfolioMemory: (input: BrokerPortfolioWorkflowInput = {}) =>
-    canPersistPortfolioMemory(input.databaseUrl),
-
-  runDemoResearchSnapshot: () => runDemoResearchSnapshot,
-  runEquityResearch: (input: EquityResearchInput) => runEquityResearch(input),
-
-  lookupAmfiNav: (query: string) => lookupAmfiNav(query),
-  lookupCorporateEvents: (query: string) => lookupCorporateEvents(query),
-  searchEquities: (query: string) => searchEquities(query),
-  getEquityQuoteSnapshots: (input: EquityQuoteSnapshotsInput) =>
-    getEquityQuoteSnapshots(input.instrumentKeys, input.accessToken),
-
-  getBrokerHoldings: (input: BrokerPortfolioWorkflowInput = {}) => getBrokerHoldings(input),
-  summarizeBrokerHoldingsCollection,
-  getBrokerTradeBook: (input: BrokerTradeBookInput = {}) => getBrokerTradeBook(input),
-  persistBrokerPortfolioMemorySnapshot: (input: BrokerPortfolioWorkflowInput = {}) =>
-    persistBrokerPortfolioMemorySnapshot(input),
-  diffBrokerPortfolioAgainstLatestSnapshot: (input: BrokerPortfolioWorkflowInput = {}) =>
-    diffBrokerPortfolioAgainstLatestSnapshot(input),
-  syncBrokerPortfolio: (input: BrokerPortfolioWorkflowInput = {}) => syncBrokerPortfolio(input),
-  importManualPortfolioSnapshot: (input: ManualPortfolioImportInput) =>
-    importManualPortfolioSnapshot(input),
-
-  reviewBrokerHoldingsAgainstResearch: (input: BrokerPortfolioReviewInput = {}) =>
-    reviewBrokerHoldingsAgainstResearch(input),
-  reviewSyncedBrokerPortfolio: (input: BrokerPortfolioReviewInput = {}) =>
-    reviewSyncedBrokerPortfolio(input),
-  reviewImportedPortfolioDecision: (input: ManualPortfolioDecisionInput) =>
-    reviewImportedPortfolioDecision(input),
-
-  getPortfolioDashboard: (input: PortfolioDashboardInput = {}) =>
-    getPortfolioDashboard(input.broker, input.databaseUrl),
-  getHoldingReviewTrend: (input: HoldingReviewTrendInput) =>
-    getHoldingReviewTrend(input.symbol, input.broker, input.databaseUrl),
+const mergeBrokerPortfolioInput = (
+  config: TradeAiRuntimeConfig,
+  input: BrokerPortfolioWorkflowInput = {},
+): BrokerPortfolioWorkflowInput => ({
+  ...(config.brokerAccessToken ?? config.accessToken
+    ? { accessToken: config.brokerAccessToken ?? config.accessToken }
+    : {}),
+  ...(config.databaseUrl ? { databaseUrl: config.databaseUrl } : {}),
+  ...(config.persistPortfolioSnapshots !== undefined
+    ? { persist: config.persistPortfolioSnapshots }
+    : {}),
+  ...input,
 });
+
+const mergeBrokerTradeBookInput = (
+  config: TradeAiRuntimeConfig,
+  input: BrokerTradeBookInput = {},
+): BrokerTradeBookInput => ({
+  ...(config.brokerAccessToken ?? config.accessToken
+    ? { accessToken: config.brokerAccessToken ?? config.accessToken }
+    : {}),
+  ...input,
+});
+
+const mergePortfolioDashboardInput = (
+  config: TradeAiRuntimeConfig,
+  input: PortfolioDashboardInput = {},
+): PortfolioDashboardInput => ({
+  ...(config.databaseUrl ? { databaseUrl: config.databaseUrl } : {}),
+  ...input,
+});
+
+const mergeHoldingReviewTrendInput = (
+  config: TradeAiRuntimeConfig,
+  input: HoldingReviewTrendInput,
+): HoldingReviewTrendInput => ({
+  ...(config.databaseUrl ? { databaseUrl: config.databaseUrl } : {}),
+  ...input,
+});
+
+const mergeManualPortfolioImportInput = (
+  config: TradeAiRuntimeConfig,
+  input: ManualPortfolioImportInput,
+): ManualPortfolioImportInput => ({
+  ...input,
+  persistence: {
+    ...(config.databaseUrl ? { databaseUrl: config.databaseUrl } : {}),
+    ...(config.persistPortfolioSnapshots !== undefined
+      ? { persist: config.persistPortfolioSnapshots }
+      : {}),
+    ...input.persistence,
+  },
+});
+
+const mergeBrokerPortfolioReviewInput = (
+  config: TradeAiRuntimeConfig,
+  dependencies: TradeAiWorkflowDependencies,
+  input: BrokerPortfolioReviewInput = {},
+): BrokerPortfolioReviewInput => ({
+  ...mergeBrokerPortfolioInput(config, input),
+  options: {
+    researchRunners: input.options?.researchRunners ?? createReviewResearchRunners(dependencies),
+    ...(config.allowPublicResearchFallback !== undefined
+      ? { allowPublicResearchFallback: config.allowPublicResearchFallback }
+      : {}),
+    ...input.options,
+  },
+});
+
+const mergeManualPortfolioDecisionInput = (
+  config: TradeAiRuntimeConfig,
+  dependencies: TradeAiWorkflowDependencies,
+  input: ManualPortfolioDecisionInput,
+): ManualPortfolioDecisionInput => ({
+  ...input,
+  ...(input.accessToken ?? config.marketAccessToken ?? config.accessToken
+    ? { accessToken: input.accessToken ?? config.marketAccessToken ?? config.accessToken }
+    : {}),
+  persistence: {
+    ...(config.databaseUrl ? { databaseUrl: config.databaseUrl } : {}),
+    ...(config.persistPortfolioSnapshots !== undefined
+      ? { persist: config.persistPortfolioSnapshots }
+      : {}),
+    ...input.persistence,
+  },
+  options: {
+    researchRunners: input.options?.researchRunners ?? createReviewResearchRunners(dependencies),
+    ...(config.allowPublicResearchFallback !== undefined
+      ? { allowPublicResearchFallback: config.allowPublicResearchFallback }
+      : {}),
+    ...input.options,
+  },
+});
+
+const createReviewResearchRunners = (
+  dependencies: TradeAiWorkflowDependencies,
+): ReviewResearchRunners => ({
+  runBrokerPositionResearch: (input) =>
+    runIndstocksPositionResearch(
+      {
+        ...input,
+        ...(input.accessToken ?? dependencies.config.brokerAccessToken ?? dependencies.config.accessToken
+          ? {
+              accessToken:
+                input.accessToken ??
+                dependencies.config.brokerAccessToken ??
+                dependencies.config.accessToken,
+            }
+          : {}),
+      },
+      dependencies,
+    ),
+  runAuthenticatedEquityResearch: (input) =>
+    runEquityResearch(
+      {
+        ...input,
+        ...(dependencies.config.marketAccessToken ?? dependencies.config.accessToken
+          ? {
+              accessToken: dependencies.config.marketAccessToken ?? dependencies.config.accessToken,
+            }
+          : {}),
+      },
+      dependencies,
+    ),
+  runPublicEquityResearch: (input) => runPublicEquityResearch(input, dependencies),
+});
+
+export const createTradeAiWorkflowService = (
+  options: CreateTradeAiWorkflowServiceOptions = {},
+) => {
+  const dependencies = createTradeAiWorkflowDependencies(options);
+  const { config } = dependencies;
+
+  return {
+    canPersistPortfolioMemory: (input: BrokerPortfolioWorkflowInput = {}) =>
+      canPersistPortfolioMemory(mergeBrokerPortfolioInput(config, input).databaseUrl, dependencies),
+
+    runDemoResearchSnapshot: () => runDemoResearchSnapshotWithDependencies(dependencies),
+    runEquityResearch: (input: EquityResearchInput) =>
+      runEquityResearch(
+        {
+          ...(config.marketAccessToken ?? config.accessToken
+            ? { accessToken: config.marketAccessToken ?? config.accessToken }
+            : {}),
+          ...input,
+        },
+        dependencies,
+      ),
+
+    lookupAmfiNav: (query: string) => lookupAmfiNav(query, dependencies),
+    lookupCorporateEvents: (query: string) => lookupCorporateEvents(query, dependencies),
+    searchEquities: (query: string) => searchEquities(query, dependencies),
+    getEquityQuoteSnapshots: (input: EquityQuoteSnapshotsInput) =>
+      getEquityQuoteSnapshots(
+        input.instrumentKeys,
+        input.accessToken ?? config.marketAccessToken ?? config.accessToken,
+        dependencies,
+      ),
+
+    getBrokerHoldings: (input: BrokerPortfolioWorkflowInput = {}) =>
+      getBrokerHoldings(mergeBrokerPortfolioInput(config, input), dependencies),
+    summarizeBrokerHoldingsCollection,
+    getBrokerTradeBook: (input: BrokerTradeBookInput = {}) =>
+      getBrokerTradeBook(mergeBrokerTradeBookInput(config, input), dependencies),
+    persistBrokerPortfolioMemorySnapshot: (input: BrokerPortfolioWorkflowInput = {}) =>
+      persistBrokerPortfolioMemorySnapshot(
+        mergeBrokerPortfolioInput(config, input),
+        dependencies,
+      ),
+    diffBrokerPortfolioAgainstLatestSnapshot: (input: BrokerPortfolioWorkflowInput = {}) =>
+      diffBrokerPortfolioAgainstLatestSnapshot(
+        mergeBrokerPortfolioInput(config, input),
+        dependencies,
+      ),
+    syncBrokerPortfolio: (input: BrokerPortfolioWorkflowInput = {}) =>
+      syncBrokerPortfolio(mergeBrokerPortfolioInput(config, input), dependencies),
+    importManualPortfolioSnapshot: (input: ManualPortfolioImportInput) =>
+      importManualPortfolioSnapshot(mergeManualPortfolioImportInput(config, input), dependencies),
+
+    reviewBrokerHoldingsAgainstResearch: (input: BrokerPortfolioReviewInput = {}) =>
+      reviewBrokerHoldingsAgainstResearchWithDependencies(
+        mergeBrokerPortfolioReviewInput(config, dependencies, input),
+        dependencies,
+      ),
+    reviewSyncedBrokerPortfolio: (input: BrokerPortfolioReviewInput = {}) =>
+      reviewSyncedBrokerPortfolioWithDependencies(
+        mergeBrokerPortfolioReviewInput(config, dependencies, input),
+        dependencies,
+      ),
+    reviewImportedPortfolioDecision: (input: ManualPortfolioDecisionInput) =>
+      reviewImportedPortfolioDecisionWithDependencies(
+        mergeManualPortfolioDecisionInput(config, dependencies, input),
+        dependencies,
+      ),
+
+    getPortfolioDashboard: (input: PortfolioDashboardInput = {}) => {
+      const merged = mergePortfolioDashboardInput(config, input);
+      return getPortfolioDashboard(merged.broker, merged.databaseUrl, dependencies);
+    },
+    getHoldingReviewTrend: (input: HoldingReviewTrendInput) => {
+      const merged = mergeHoldingReviewTrendInput(config, input);
+      return getHoldingReviewTrend(
+        merged.symbol,
+        merged.broker,
+        merged.databaseUrl,
+        dependencies,
+      );
+    },
+  };
+};
 
 export type TradeAiWorkflowService = ReturnType<typeof createTradeAiWorkflowService>;

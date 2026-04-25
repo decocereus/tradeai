@@ -148,7 +148,7 @@ flowchart LR
 ## Design Rules
 
 1. `The UI stays behind the workflow service.`
-   TUI, future web UI, API routes, and extensions should call `createTradeAiWorkflowService()` rather than importing internal workflow modules.
+   TUI, future web UI, API routes, and extensions should call `createTradeAiWorkflowService()` rather than importing internal workflow modules. Runtime config and external adapters belong at service construction, not inside UI command handlers.
 
 2. `Effect owns orchestration.`
    Jobs, retries, dependencies, and service composition belong there.

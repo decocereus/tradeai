@@ -1,10 +1,4 @@
 import { buildRecommendation } from "@tradeai/agent-runtime";
-import {
-  buildEquityResearchPacket,
-  buildIndstocksResearchPacketForPosition,
-  buildPublicEquityResearchPacket,
-  loadDemoResearchPacket,
-} from "@tradeai/data-sources";
 import type {
   DailyResearchResult,
   MemoryContext,
@@ -12,10 +6,16 @@ import type {
   ResearchQuality,
   ResearchPacket,
 } from "@tradeai/domain";
-import { loadMemoryContext } from "@tradeai/memory";
 import { scorePortfolioFit } from "@tradeai/portfolio-engine";
 import { scoreInstrument, scoreSector } from "@tradeai/strategy-engine";
 import { Effect } from "effect";
+
+import {
+  createTradeAiWorkflowDependencies,
+  type TradeAiWorkflowDependencies,
+} from "./ports.ts";
+
+const defaultDependencies = createTradeAiWorkflowDependencies();
 
 const inferResearchQuality = (packet: ResearchPacket): ResearchQuality => {
   const source =
@@ -82,35 +82,51 @@ export const buildResearchResult = (
     } satisfies DailyResearchResult;
   });
 
-export const runDailyResearch = (input: DailyResearchInput) =>
+export const runDailyResearch = (
+  input: DailyResearchInput,
+  dependencies: TradeAiWorkflowDependencies = defaultDependencies,
+) =>
   Effect.gen(function* () {
-    const memoryContext = yield* loadMemoryContext;
+    const memoryContext = yield* dependencies.memorySource.loadMemoryContext();
     return yield* buildResearchResult(input.packet, memoryContext);
   });
 
-export const runDemoResearchSnapshot = Effect.gen(function* () {
-  const packet = yield* loadDemoResearchPacket;
-  const memoryContext = yield* loadMemoryContext;
+export const runDemoResearchSnapshotWithDependencies = (
+  dependencies: TradeAiWorkflowDependencies = defaultDependencies,
+) => Effect.gen(function* () {
+  const packet = yield* dependencies.researchSources.loadDemoResearchPacket();
+  const memoryContext = yield* dependencies.memorySource.loadMemoryContext();
   return yield* buildResearchResult(packet, memoryContext);
 });
 
-export const runEquityResearch = (input: EquityResearchInput) =>
+export const runDemoResearchSnapshot = runDemoResearchSnapshotWithDependencies();
+
+export const runEquityResearch = (
+  input: EquityResearchInput,
+  dependencies: TradeAiWorkflowDependencies = defaultDependencies,
+) =>
   Effect.gen(function* () {
-    const packet = yield* buildEquityResearchPacket(input);
-    const memoryContext = yield* loadMemoryContext;
+    const packet = yield* dependencies.researchSources.buildEquityResearchPacket(input);
+    const memoryContext = yield* dependencies.memorySource.loadMemoryContext();
     return yield* buildResearchResult(packet, memoryContext);
   });
 
-export const runPublicEquityResearch = (input: PublicEquityResearchInput) =>
+export const runPublicEquityResearch = (
+  input: PublicEquityResearchInput,
+  dependencies: TradeAiWorkflowDependencies = defaultDependencies,
+) =>
   Effect.gen(function* () {
-    const packet = yield* buildPublicEquityResearchPacket(input);
-    const memoryContext = yield* loadMemoryContext;
+    const packet = yield* dependencies.researchSources.buildPublicEquityResearchPacket(input);
+    const memoryContext = yield* dependencies.memorySource.loadMemoryContext();
     return yield* buildResearchResult(packet, memoryContext);
   });
 
-export const runIndstocksPositionResearch = (input: IndstocksPositionResearchInput) =>
+export const runIndstocksPositionResearch = (
+  input: IndstocksPositionResearchInput,
+  dependencies: TradeAiWorkflowDependencies = defaultDependencies,
+) =>
   Effect.gen(function* () {
-    const packet = yield* buildIndstocksResearchPacketForPosition(input);
-    const memoryContext = yield* loadMemoryContext;
+    const packet = yield* dependencies.researchSources.buildBrokerPositionResearchPacket(input);
+    const memoryContext = yield* dependencies.memorySource.loadMemoryContext();
     return yield* buildResearchResult(packet, memoryContext);
   });

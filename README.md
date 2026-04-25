@@ -16,6 +16,7 @@ Current scaffold commands:
 - `bun run dev:tui -- --pi "What files are in the current directory?"`
 - `bun run typecheck`
 - `bun run lint`
+- `bun run test:integration` for opt-in live broker/market/DB checks
 
 Local setup:
 

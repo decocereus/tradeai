@@ -8,7 +8,8 @@
   ],
   "scripts": {
     "dev:tui": "bun run apps/tui/src/index.ts",
-    "test": "bun test",
+    "test": "bun test apps packages",
+    "test:integration": "bun test integration",
     "typecheck": "bunx tsgo -p tsconfig.json",
     "typecheck:tsc": "bunx tsc -p tsconfig.json --noEmit",
     "lint": "bunx oxlint .",

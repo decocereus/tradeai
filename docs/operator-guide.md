@@ -16,6 +16,8 @@ Optional:
 
 ```bash
 UPSTOX_ACCESS_TOKEN=...
+TRADEAI_ALLOW_PUBLIC_RESEARCH_FALLBACK=true
+TRADEAI_PERSIST_PORTFOLIO_SNAPSHOTS=true
 ```
 
 3. Start local Postgres:
@@ -122,6 +124,19 @@ bun run typecheck:tsc
 bun run lint
 bun run check
 ```
+
+Live integration checks are separate from the default deterministic suite:
+
+```bash
+TRADEAI_RUN_INTEGRATION_TESTS=1 bun run test:integration
+```
+
+Each live case still requires its own env:
+
+- `INDSTOCKS_ACCESS_TOKEN` for broker holdings
+- `UPSTOX_ACCESS_TOKEN` for market quotes
+- `DATABASE_URL` for persisted dashboard loading
+- optional `TRADEAI_INTEGRATION_INSTRUMENT_KEY` to override the default quote instrument
 
 ## What To Expect Right Now
 
