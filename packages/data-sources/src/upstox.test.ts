@@ -177,6 +177,8 @@ describe("data-sources / upstox", () => {
     expect(packet.instrument.symbol).toBe("RELIANCE");
     expect(packet.instrument.currentEventContext).toBeGreaterThan(45);
     expect(packet.instrument.financialQuality).toBe(45);
+    expect(packet.researchQuality?.completeness).toBe("partial");
+    expect(packet.researchQuality?.missingSignals).toEqual(["fundamentals", "candles", "events"]);
   });
 
   it("builds a full equity research packet from injected search and quote responses", async () => {
@@ -267,13 +269,85 @@ describe("data-sources / upstox", () => {
       );
     }) as unknown as typeof fetch;
 
-    const packet = await Effect.runPromise(buildEquityResearchPacket("reliance", "secret", fetchStub));
+    const packet = await Effect.runPromise(
+      buildEquityResearchPacket({
+        query: "reliance",
+        accessToken: "secret",
+        fetchImpl: fetchStub,
+      }),
+    );
 
     expect(requestCount).toBe(5);
     expect(packet.source).toBe("upstox_quote");
     expect(packet.instrument.symbol).toBe("RELIANCE");
     expect(packet.runLabel).toContain("reliance");
     expect(packet.instrument.financialQuality).toBeGreaterThan(45);
+    expect(packet.researchQuality?.source).toBe("upstox");
+    expect(packet.researchQuality?.missingSignals).toEqual(["candles"]);
+  });
+
+  it("records failed enrichment sources in research quality", async () => {
+    const fetchStub = (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("NSE.json.gz")) {
+        const { gzipSync } = await import("node:zlib");
+        return new Response(
+          gzipSync(
+            Buffer.from(
+              JSON.stringify([
+                {
+                  segment: "NSE_EQ",
+                  name: "RELIANCE INDUSTRIES LTD",
+                  exchange: "NSE",
+                  isin: "INE002A01018",
+                  instrument_type: "EQ",
+                  instrument_key: "NSE_EQ|INE002A01018",
+                  trading_symbol: "RELIANCE",
+                  short_name: "Reliance Industries",
+                  security_type: "NORMAL",
+                },
+              ]),
+            ),
+          ),
+          { status: 200 },
+        );
+      }
+
+      if (url.includes("instrument_key=NSE_EQ%7CINE002A01018")) {
+        return new Response(
+          JSON.stringify({
+            data: {
+              "NSE_EQ|INE002A01018": {
+                instrument_key: "NSE_EQ|INE002A01018",
+                trading_symbol: "RELIANCE",
+                last_price: 2945.4,
+                close_price: 2901.1,
+                volume: 123456,
+              },
+            },
+          }),
+          { status: 200 },
+        );
+      }
+
+      return new Response("upstream unavailable", { status: 503 });
+    }) as unknown as typeof fetch;
+
+    const packet = await Effect.runPromise(
+      buildEquityResearchPacket({
+        query: "reliance",
+        accessToken: "secret",
+        fetchImpl: fetchStub,
+      }),
+    );
+
+    expect(packet.researchQuality?.completeness).toBe("partial");
+    expect(packet.researchQuality?.missingSignals).toEqual([
+      "fundamentals",
+      "candles",
+      "events",
+    ]);
+    expect(packet.researchQuality?.fallbacksUsed).toEqual(["neutral_score_defaults"]);
   });
 
   it("uses injected fetch for instrument search", async () => {

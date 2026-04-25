@@ -53,6 +53,7 @@ export const serializeHoldingReviewReport = (
         ...(review.verdict ? { verdict: review.verdict } : {}),
         ...(review.conviction !== undefined ? { conviction: review.conviction } : {}),
         ...(review.runLabel ? { runLabel: review.runLabel } : {}),
+        ...(review.researchQuality ? { researchQuality: review.researchQuality } : {}),
         reviewedAt: createdAt.toISOString(),
       },
       createdAt,

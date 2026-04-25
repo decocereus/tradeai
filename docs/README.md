@@ -1,9 +1,14 @@
 # TradeAI Docs
 
-This folder captures the current product thinking before implementation starts.
+This folder captures both:
+
+- the original product and architecture thinking
+- the current implemented system state
 
 Documents:
 
+- [Current State](/Users/amartyasingh/Documents/projects/tradeai/docs/current-state.md)
+- [Operator Guide](/Users/amartyasingh/Documents/projects/tradeai/docs/operator-guide.md)
 - [What We Are Building](/Users/amartyasingh/Documents/projects/tradeai/docs/what-we-are-building.md)
 - [Technical Spec](/Users/amartyasingh/Documents/projects/tradeai/docs/technical-spec.md)
 - [Use Cases](/Users/amartyasingh/Documents/projects/tradeai/docs/use-cases.md)
@@ -17,5 +22,6 @@ Current direction:
 - TypeScript-first stack with Bun
 - `Effect` as the application foundation
 - `pi-mono` as the agent and TUI harness
+- Live broker sync through `INDstocks`
 - Research and recommendation first, manual execution first
 - Learning through memory, retrieval, and structured feedback instead of custom model training

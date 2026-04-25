@@ -45,6 +45,8 @@ export const normalizeBrokerHoldings = (
 ): PortfolioPositionSnapshot[] =>
   holdings.map((holding) => ({
     symbol: holding.tradingSymbol,
+    ...(holding.securityId ? { securityId: holding.securityId } : {}),
+    ...(holding.instrumentName ? { instrumentName: holding.instrumentName } : {}),
     isin: holding.isin,
     exchangeSegment: holding.exchangeSegment,
     quantity: holding.quantity,

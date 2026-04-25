@@ -1,7 +1,7 @@
 import type {
   CorporateEvent,
-  HistoricalCandle,
   ResearchPacket,
+  ResearchQuality,
   TechnicalAnalysisSnapshot,
   UpstoxFundamentalsSnapshot,
   UpstoxInstrumentSearchEntry,
@@ -28,6 +28,17 @@ export interface UpstoxSearchParams {
   query: string;
   exchange?: string;
   instrumentType?: string;
+}
+
+export interface EquityResearchPacketInput {
+  query: string;
+  accessToken?: string;
+  fetchImpl?: typeof fetch;
+}
+
+export interface PublicEquityResearchPacketInput {
+  query: string;
+  fetchImpl?: typeof fetch;
 }
 
 interface UpstoxSearchApiRecord {
@@ -213,6 +224,7 @@ export const buildResearchPacketFromUpstoxSnapshot = (
     fundamentals?: UpstoxFundamentalsSnapshot;
     events?: readonly CorporateEvent[];
     technicalAnalysis?: TechnicalAnalysisSnapshot;
+    researchQuality?: ResearchQuality;
   },
 ): ResearchPacket => {
   const closePrice = snapshot.closePrice ?? snapshot.lastPrice;
@@ -245,6 +257,19 @@ export const buildResearchPacketFromUpstoxSnapshot = (
   const technicalAnalysis = snapshot.technicalAnalysis;
   const sectorInference =
     profile ? inferSectorFromEvidence(profile, fundamentals, snapshot.events ?? []) : undefined;
+  const missingSignals: ResearchQuality["missingSignals"] = [
+    ...(fundamentals ? [] : ["fundamentals" as const]),
+    ...(technicalAnalysis ? [] : ["candles" as const]),
+    ...(snapshot.events && snapshot.events.length > 0 ? [] : ["events" as const]),
+  ];
+  const researchQuality =
+    snapshot.researchQuality ??
+    ({
+      source: "upstox",
+      completeness: missingSignals.length === 0 ? "complete" : "partial",
+      missingSignals,
+      fallbacksUsed: missingSignals.length > 0 ? ["neutral_score_defaults"] : [],
+    } satisfies ResearchQuality);
 
   // Conservative defaults: until we add fundamentals and governance sources,
   // unknown dimensions stay near neutral-to-cautious rather than overconfident.
@@ -320,6 +345,7 @@ export const buildResearchPacketFromUpstoxSnapshot = (
     ...(snapshot.isin ? { instrumentIsin: snapshot.isin } : {}),
     portfolioExposures: [],
     technicalAnalysis,
+    researchQuality,
   };
 };
 
@@ -332,45 +358,54 @@ const buildHistoricalCandleRequestDates = (): { toDate: string; fromDate: string
   return { toDate, fromDate };
 };
 
-export const buildEquityResearchPacket = (
-  query: string,
-  accessToken?: string,
-  fetchImpl: typeof fetch = fetch,
-) =>
+export const buildEquityResearchPacket = (input: EquityResearchPacketInput) =>
   Effect.gen(function* () {
-    const profiles = yield* searchUpstoxInstrumentProfiles(query, fetchImpl);
-    const selectedProfile = selectPreferredUpstoxInstrumentProfile(query, profiles);
+    const fetchImpl = input.fetchImpl ?? fetch;
+    const profiles = yield* searchUpstoxInstrumentProfiles(input.query, fetchImpl);
+    const selectedProfile = selectPreferredUpstoxInstrumentProfile(input.query, profiles);
     if (!selectedProfile) {
-      throw new Error(`No Upstox equity instrument matched query "${query}".`);
+      throw new Error(`No Upstox equity instrument matched query "${input.query}".`);
     }
 
     const quoteResults = yield* fetchUpstoxQuoteSnapshot(
       [selectedProfile.instrumentKey],
-      accessToken,
+      input.accessToken,
       fetchImpl,
     );
-    const fundamentals = selectedProfile.isin
-      ? yield* fetchUpstoxFundamentalsSnapshot(selectedProfile.isin, fetchImpl).pipe(
-          Effect.catchAll(() => Effect.succeed(undefined)),
-        )
+    const fundamentalsOutcome = selectedProfile.isin
+      ? yield* Effect.either(fetchUpstoxFundamentalsSnapshot(selectedProfile.isin, fetchImpl))
       : undefined;
-    const events = yield* searchBseAnnouncements(
-      selectedProfile.shortName || selectedProfile.name || selectedProfile.tradingSymbol,
-      fetchImpl,
-    ).pipe(Effect.catchAll(() => Effect.succeed([])));
+    const eventsOutcome = yield* Effect.either(
+      searchBseAnnouncements(
+        selectedProfile.shortName || selectedProfile.name || selectedProfile.tradingSymbol,
+        fetchImpl,
+      ),
+    );
     const { toDate, fromDate } = buildHistoricalCandleRequestDates();
-    const historicalCandles = yield* fetchHistoricalCandles(
-      {
-        instrumentKey: selectedProfile.instrumentKey,
-        unit: "days",
-        interval: 1,
-        toDate,
-        fromDate,
-      },
-      accessToken,
-      fetchImpl,
-    ).pipe(Effect.catchAll(() => Effect.succeed([] as HistoricalCandle[])));
+    const historicalCandlesOutcome = yield* Effect.either(
+      fetchHistoricalCandles(
+        {
+          instrumentKey: selectedProfile.instrumentKey,
+          unit: "days",
+          interval: 1,
+          toDate,
+          fromDate,
+        },
+        input.accessToken,
+        fetchImpl,
+      ),
+    );
+    const fundamentals =
+      fundamentalsOutcome?._tag === "Right" ? fundamentalsOutcome.right : undefined;
+    const events = eventsOutcome._tag === "Right" ? eventsOutcome.right : [];
+    const historicalCandles =
+      historicalCandlesOutcome._tag === "Right" ? historicalCandlesOutcome.right : [];
     const technicalAnalysis = analyzeHistoricalCandles(historicalCandles);
+    const missingSignals: ResearchQuality["missingSignals"] = [
+      ...(fundamentals ? [] : ["fundamentals" as const]),
+      ...(technicalAnalysis ? [] : ["candles" as const]),
+      ...(events.length > 0 ? [] : ["events" as const]),
+    ];
 
     const snapshots = buildUpstoxQuoteSnapshot([selectedProfile], quoteResults).map((snapshot) => ({
       ...snapshot,
@@ -378,6 +413,12 @@ export const buildEquityResearchPacket = (
       ...(fundamentals ? { fundamentals } : {}),
       events,
       ...(technicalAnalysis ? { technicalAnalysis } : {}),
+      researchQuality: {
+        source: "upstox",
+        completeness: missingSignals.length === 0 ? "complete" : "partial",
+        missingSignals,
+        fallbacksUsed: missingSignals.length === 0 ? [] : ["neutral_score_defaults" as const],
+      } satisfies ResearchQuality,
     }));
     const snapshot = snapshots[0];
     if (!snapshot) {
@@ -387,26 +428,33 @@ export const buildEquityResearchPacket = (
     return buildResearchPacketFromUpstoxSnapshot(snapshot);
   });
 
-export const buildPublicEquityResearchPacket = (
-  query: string,
-  fetchImpl: typeof fetch = fetch,
-) =>
+export const buildPublicEquityResearchPacket = (input: PublicEquityResearchPacketInput) =>
   Effect.gen(function* () {
-    const profiles = yield* searchUpstoxInstrumentProfiles(query, fetchImpl);
-    const selectedProfile = selectPreferredUpstoxInstrumentProfile(query, profiles);
+    const fetchImpl = input.fetchImpl ?? fetch;
+    const profiles = yield* searchUpstoxInstrumentProfiles(input.query, fetchImpl);
+    const selectedProfile = selectPreferredUpstoxInstrumentProfile(input.query, profiles);
     if (!selectedProfile) {
-      throw new Error(`No public equity instrument matched query "${query}".`);
+      throw new Error(`No public equity instrument matched query "${input.query}".`);
     }
 
-    const fundamentals = selectedProfile.isin
-      ? yield* fetchUpstoxFundamentalsSnapshot(selectedProfile.isin, fetchImpl).pipe(
-          Effect.catchAll(() => Effect.succeed(undefined)),
-        )
+    const fundamentalsOutcome = selectedProfile.isin
+      ? yield* Effect.either(fetchUpstoxFundamentalsSnapshot(selectedProfile.isin, fetchImpl))
       : undefined;
-    const events = yield* searchBseAnnouncements(
-      selectedProfile.shortName || selectedProfile.name || selectedProfile.tradingSymbol,
-      fetchImpl,
-    ).pipe(Effect.catchAll(() => Effect.succeed([])));
+    const eventsOutcome = yield* Effect.either(
+      searchBseAnnouncements(
+        selectedProfile.shortName || selectedProfile.name || selectedProfile.tradingSymbol,
+        fetchImpl,
+      ),
+    );
+    const fundamentals =
+      fundamentalsOutcome?._tag === "Right" ? fundamentalsOutcome.right : undefined;
+    const events = eventsOutcome._tag === "Right" ? eventsOutcome.right : [];
+    const missingSignals: ResearchQuality["missingSignals"] = [
+      "broker_quote",
+      "candles",
+      ...(fundamentals ? [] : ["fundamentals" as const]),
+      ...(events.length > 0 ? [] : ["events" as const]),
+    ];
 
     return buildResearchPacketFromUpstoxSnapshot({
       instrumentKey: selectedProfile.instrumentKey,
@@ -422,5 +470,11 @@ export const buildPublicEquityResearchPacket = (
       profile: selectedProfile,
       ...(fundamentals ? { fundamentals } : {}),
       events,
+      researchQuality: {
+        source: "public",
+        completeness: fundamentals && events.length > 0 ? "partial" : "minimal",
+        missingSignals,
+        fallbacksUsed: ["public_research", "neutral_score_defaults"],
+      } satisfies ResearchQuality,
     });
   });

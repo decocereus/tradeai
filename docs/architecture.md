@@ -2,7 +2,7 @@
 
 ## Goal
 
-This document shows the current architecture thinking in one place:
+This document shows the current architecture in one place:
 
 - what runs where
 - what each module does
@@ -16,9 +16,9 @@ This is intentionally concise and implementation-oriented.
 ```mermaid
 flowchart LR
     U["User"] --> T["apps/tui"]
-    T --> S["app-services"]
+    T --> S["app-services workflow service"]
     S --> DS["data-sources"]
-    DS --> DB["db (Postgres + pgvector)"]
+    DS --> DB["db (Postgres now, pgvector later)"]
     DB --> ST["strategy-engine"]
     DB --> M["memory"]
     ST --> A["agent-runtime"]
@@ -32,8 +32,8 @@ flowchart LR
 
 ```mermaid
 flowchart TB
-    UI["Interface layer<br/>apps/tui, later apps/web"]
-    APP["Application layer<br/>Effect services and workflows"]
+    UI["Interface layer<br/>apps/tui, later apps/web/API"]
+    APP["Application layer<br/>createTradeAiWorkflowService"]
     AGENT["Agent layer<br/>pi-coding-agent SDK"]
     CORE["Core logic layer<br/>strategy-engine, portfolio-engine, memory"]
     DATA["Data layer<br/>db, data-sources, knowledge ingestion"]
@@ -50,8 +50,8 @@ flowchart TB
 
 | Layer | What it does | What it should not do |
 | --- | --- | --- |
-| Interface | Displays runs, scores, diffs, trade forms | Hold business logic |
-| Application | Orchestrates jobs and use cases with Effect | Recompute strategy logic ad hoc |
+| Interface | Displays runs, scores, diffs, trade forms | Import internal workflow modules |
+| Application | Exposes `createTradeAiWorkflowService()` and orchestrates use cases with Effect | Recompute strategy logic ad hoc |
 | Agent | Synthesizes recommendations and explanations | Be the source of truth for raw metrics |
 | Core logic | Scores sectors and instruments, checks portfolio fit, compares runs | Talk directly to the UI |
 | Data | Stores facts, retrieves history, ingests source material | Decide recommendations by itself |
@@ -74,7 +74,7 @@ flowchart TB
         PORT["packages/portfolio-engine"]
         MEM["packages/memory"]
         AGENT["packages/agent-runtime"]
-        APPSVC["packages/app-services"]
+        APPSVC["packages/app-services<br/>workflow service port"]
     end
 
     TUI --> APPSVC
@@ -97,8 +97,8 @@ flowchart TB
 
 | Module | Responsibility | Main inputs | Main outputs |
 | --- | --- | --- | --- |
-| `apps/tui` | Operator UI for runs and review | workflows, state | commands, trade entries |
-| `app-services` | Orchestrates end-to-end use cases | user intent, schedules | completed workflows |
+| `apps/tui` | Operator UI for runs and review | `createTradeAiWorkflowService()`, state | commands, trade entries |
+| `app-services` | Public workflow port plus internal workflow modules | typed workflow inputs | completed workflows |
 | `data-sources` | Pulls market and source data | APIs, feeds, files | normalized raw records |
 | `knowledge` | Distills transcripts and letters | transcript text, letters | `KnowledgeDocument`, `KnowledgeClaim` |
 | `db` | Persists facts and history | domain records | queries and storage |
@@ -112,14 +112,14 @@ flowchart TB
 ```mermaid
 sequenceDiagram
     participant U as User in TUI
-    participant S as app-services
+    participant S as app-services workflow service
     participant D as data-sources
     participant DB as db
     participant SE as strategy-engine
     participant M as memory
     participant A as agent-runtime
 
-    U->>S: Run daily research
+    U->>S: runEquityResearch / review / dashboard input
     S->>D: Fetch latest data
     D->>DB: Save snapshots
     S->>SE: Score sectors and instruments
@@ -140,15 +140,15 @@ flowchart LR
     B["Buffett letters"] --> K
     N["Personal notes"] --> K
     K --> C["distilled claims"]
-    C --> DB["pgvector + relational tables"]
+    C --> DB["relational tables now, pgvector later"]
     DB --> M["memory retrieval"]
     M --> A["agent-runtime"]
 ```
 
 ## Design Rules
 
-1. `The TUI stays thin.`
-   It should call workflows, not own business logic.
+1. `The UI stays behind the workflow service.`
+   TUI, future web UI, API routes, and extensions should call `createTradeAiWorkflowService()` rather than importing internal workflow modules.
 
 2. `Effect owns orchestration.`
    Jobs, retries, dependencies, and service composition belong there.
@@ -165,13 +165,15 @@ flowchart LR
 6. `Storage separates facts from heuristics.`
    Market facts, recommendation history, and transcript-derived claims should not be blurred together.
 
-## V1 Runtime Decision
+## Current Runtime Decision
 
-V1 should launch as:
+The current runtime is:
 
 - `apps/tui`
-- backed by Effect services
+- backed by `createTradeAiWorkflowService()` from `@tradeai/app-services`
 - using `pi-coding-agent` as the default harness and `pi-tui` for custom components only
-- persisting to Postgres and pgvector
+- persisting to Postgres
+- using `INDstocks` for live broker data
+- using public data sources for enrichment
 
-`apps/api` should remain optional until we need background scheduling or external hooks.
+`apps/api` still remains optional until we need background scheduling or external hooks.

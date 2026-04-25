@@ -2,13 +2,13 @@
 
 ## Stack Contract
 
-The system should be built in TypeScript and use:
+The implemented system is built in TypeScript and uses:
 
 - `Bun` for workspace management, script running, and the default runtime
 - `Effect` for application architecture, services, jobs, errors, and orchestration
 - `pi-mono` as the agent and TUI harness
 - `PostgreSQL` for structured storage
-- `pgvector` for retrieval over transcripts, Buffett letters, and notes
+- `pgvector` planned for retrieval over transcripts, Buffett letters, and notes
 - `Drizzle` for schema and migrations
 - `Schema` from the `effect` package for internal domain schemas
 
@@ -42,9 +42,23 @@ The runtime split should be:
 
 This keeps the product logic independent from the UI while still letting us move fast with a usable operator console.
 
+## Current Runtime State
+
+The system now has a real working runtime, not just a proposed one.
+
+Implemented pieces:
+
+- Bun workspace monorepo
+- Effect-based orchestration
+- local Postgres persistence
+- Pi harness integration
+- terminal-first operator UI
+- INDstocks broker connectivity
+- persisted dashboard/review flows
+
 ## High-Level Architecture
 
-The system should be split into deterministic pipelines and agent reasoning layers.
+The system is split into deterministic pipelines and agent reasoning layers.
 
 Deterministic layers:
 
@@ -72,27 +86,27 @@ Agent layers:
 | `memory` | Recommendation history, trades, retrieval | Powers yes/yes and yes/no logic |
 | `agent-runtime` | Pi agent workflows and tools | Synthesis and explanation |
 | `app-services` | Effect services coordinating runs | The app orchestration layer |
-| `db` | Drizzle schema and persistence | Postgres and pgvector |
+| `db` | Drizzle schema and persistence | Postgres now, pgvector later |
 | `tui` | Terminal operator cockpit | First interface layer |
 
-## Suggested Monorepo Shape
+## Monorepo Shape
 
-This is the current recommended layout.
+This is the current implemented layout.
 
 | Path | Purpose |
 | --- | --- |
 | `apps/tui` | Customized Pi-based operator console |
-| `apps/api` | Optional internal API and scheduler host |
+| `apps/api` | Reserved for later, not yet implemented |
 | `packages/domain` | Shared types, schemas, enums, recommendation contracts |
 | `packages/db` | Drizzle schema, migrations, and queries |
 | `packages/data-sources` | Connectors for market, fundamentals, funds, and knowledge ingestion |
-| `packages/knowledge` | Transcript and Buffett-letter distillation plus claim extraction |
+| `packages/knowledge` | Placeholder package for transcript and Buffett-letter distillation |
 | `packages/strategy-engine` | Deterministic scoring and ranking logic |
 | `packages/agent-runtime` | Pi-agent orchestration, tools, and prompting |
 | `packages/portfolio-engine` | Allocation and portfolio-fit logic |
 | `packages/memory` | Retrieval, embeddings, and recommendation history |
 | `packages/app-services` | Effect services for workflows and jobs |
-| `packages/shared` | Utilities, config, logging, and observability |
+| `packages/observability` | Logging and operational instrumentation |
 
 ## pi-mono Usage Plan
 
@@ -103,7 +117,7 @@ The current intended package usage is:
 | `@mariozechner/pi-coding-agent` | Primary SDK entrypoint, session lifecycle, resources, tools, and extension model |
 | `@mariozechner/pi-tui` | Custom interactive components and overlays when the built-in session UI is not enough |
 
-We do not need `pi-web-ui` in v1.
+We do not need `pi-web-ui` in the current system.
 
 We should keep the TUI thin:
 
@@ -113,7 +127,7 @@ We should keep the TUI thin:
 
 ## Data Model
 
-The core entities should look roughly like this.
+The core entities now include:
 
 | Entity | Purpose |
 | --- | --- |
@@ -129,12 +143,22 @@ The core entities should look roughly like this.
 | `KnowledgeDocument` | Transcript, Buffett letter, note, or distilled memo |
 | `KnowledgeClaim` | Structured heuristic extracted from a document |
 
+Implemented broker/runtime entities now also include:
+
+- `BrokerHolding`
+- `BrokerTradeFill`
+- `PortfolioMemorySnapshot`
+- `PortfolioSyncReport`
+- `HoldingResearchReview`
+- `HoldingReviewTrend`
+- `PortfolioDashboardReport`
+
 ## Core Storage Needs
 
 Preferred direction:
 
 - PostgreSQL for structured facts and recommendation history
-- `pgvector` for retrieval over notes, transcripts, and reference material
+- `pgvector` is still the preferred next step for retrieval over notes, transcripts, and reference material
 
 This keeps the system simple and TypeScript-friendly.
 

@@ -39,6 +39,12 @@ const demoPacket: ResearchPacket = {
       percentage: 20,
     },
   ],
+  researchQuality: {
+    source: "demo",
+    completeness: "minimal",
+    missingSignals: ["fundamentals", "candles", "events", "broker_quote", "memory"],
+    fallbacksUsed: ["neutral_score_defaults"],
+  },
 };
 
-export const loadResearchPacket = Effect.succeed(demoPacket);
+export const loadDemoResearchPacket = Effect.succeed(demoPacket);

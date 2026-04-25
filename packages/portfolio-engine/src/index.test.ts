@@ -36,6 +36,7 @@ describe("portfolio-engine", () => {
         broker: "indstocks",
         securityId: "12345",
         tradingSymbol: "RELIANCE-EQ",
+        instrumentName: "Reliance Industries Limited",
         exchangeSegment: "NSE_EQ",
         isin: "INE002A01018",
         quantity: 50,
@@ -51,6 +52,8 @@ describe("portfolio-engine", () => {
     const positions = normalizeBrokerHoldings(holdings);
     expect(positions).toHaveLength(1);
     expect(positions[0]?.symbol).toBe("RELIANCE-EQ");
+    expect(positions[0]?.securityId).toBe("12345");
+    expect(positions[0]?.instrumentName).toBe("Reliance Industries Limited");
   });
 
   it("summarizes normalized positions", () => {
@@ -141,6 +144,12 @@ describe("portfolio-engine", () => {
         keyReasons: [],
         mainRisks: [],
         invalidationConditions: [],
+      },
+      researchQuality: {
+        source: "upstox",
+        completeness: "complete",
+        missingSignals: [],
+        fallbacksUsed: [],
       },
     } satisfies DailyResearchResult;
 

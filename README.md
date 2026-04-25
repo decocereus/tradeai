@@ -2,6 +2,11 @@
 
 Foundational project docs live in [docs/README.md](/Users/amartyasingh/Documents/projects/tradeai/docs/README.md).
 
+Best starting docs right now:
+
+- [Current State](/Users/amartyasingh/Documents/projects/tradeai/docs/current-state.md)
+- [Operator Guide](/Users/amartyasingh/Documents/projects/tradeai/docs/operator-guide.md)
+
 Current scaffold commands:
 
 - `bun run dev:tui`

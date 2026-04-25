@@ -97,14 +97,45 @@ export const TechnicalAnalysisSnapshot = Schema.Struct({
 });
 export type TechnicalAnalysisSnapshot = Schema.Schema.Type<typeof TechnicalAnalysisSnapshot>;
 
+export const ResearchQualitySource = Schema.Literal("demo", "indstocks", "upstox", "public");
+export type ResearchQualitySource = Schema.Schema.Type<typeof ResearchQualitySource>;
+
+export const ResearchCompleteness = Schema.Literal("complete", "partial", "minimal");
+export type ResearchCompleteness = Schema.Schema.Type<typeof ResearchCompleteness>;
+
+export const MissingResearchSignal = Schema.Literal(
+  "fundamentals",
+  "candles",
+  "events",
+  "broker_quote",
+  "memory",
+);
+export type MissingResearchSignal = Schema.Schema.Type<typeof MissingResearchSignal>;
+
+export const ResearchFallbackUsed = Schema.Literal(
+  "public_research",
+  "symbol_match",
+  "neutral_score_defaults",
+);
+export type ResearchFallbackUsed = Schema.Schema.Type<typeof ResearchFallbackUsed>;
+
+export const ResearchQuality = Schema.Struct({
+  source: ResearchQualitySource,
+  completeness: ResearchCompleteness,
+  missingSignals: Schema.Array(MissingResearchSignal),
+  fallbacksUsed: Schema.Array(ResearchFallbackUsed),
+});
+export type ResearchQuality = Schema.Schema.Type<typeof ResearchQuality>;
+
 export const ResearchPacket = Schema.Struct({
   runLabel: Schema.String,
-  source: Schema.Literal("demo", "upstox_quote"),
+  source: Schema.Literal("demo", "upstox_quote", "indstocks_quote"),
   sector: SectorSnapshot,
   instrument: InstrumentSnapshot,
   instrumentIsin: Schema.optional(Schema.String),
   portfolioExposures: Schema.Array(PortfolioExposure),
   technicalAnalysis: Schema.optional(TechnicalAnalysisSnapshot),
+  researchQuality: Schema.optional(ResearchQuality),
 });
 export type ResearchPacket = Schema.Schema.Type<typeof ResearchPacket>;
 
@@ -119,6 +150,7 @@ export const DailyResearchResult = Schema.Struct({
   memoryContext: MemoryContext,
   recommendation: Recommendation,
   technicalAnalysis: Schema.optional(TechnicalAnalysisSnapshot),
+  researchQuality: ResearchQuality,
 });
 export type DailyResearchResult = Schema.Schema.Type<typeof DailyResearchResult>;
 
@@ -223,6 +255,7 @@ export const BrokerHolding = Schema.Struct({
   broker: BrokerSource,
   securityId: Schema.String,
   tradingSymbol: Schema.String,
+  instrumentName: Schema.optional(Schema.String),
   exchangeSegment: Schema.String,
   isin: Schema.String,
   quantity: Schema.Number,
@@ -249,6 +282,8 @@ export type BrokerTradeFill = Schema.Schema.Type<typeof BrokerTradeFill>;
 
 export const PortfolioPositionSnapshot = Schema.Struct({
   symbol: Schema.String,
+  securityId: Schema.optional(Schema.String),
+  instrumentName: Schema.optional(Schema.String),
   isin: Schema.String,
   exchangeSegment: Schema.String,
   quantity: Schema.Number,
@@ -328,6 +363,7 @@ export const HoldingResearchReview = Schema.Struct({
   verdict: Schema.optional(RecommendationVerdict),
   conviction: Schema.optional(Schema.Number),
   runLabel: Schema.optional(Schema.String),
+  researchQuality: Schema.optional(ResearchQuality),
 });
 export type HoldingResearchReview = Schema.Schema.Type<typeof HoldingResearchReview>;
 
@@ -359,6 +395,7 @@ export const HoldingReviewHistoryEntry = Schema.Struct({
   verdict: Schema.optional(RecommendationVerdict),
   conviction: Schema.optional(Schema.Number),
   runLabel: Schema.optional(Schema.String),
+  researchQuality: Schema.optional(ResearchQuality),
   reviewedAt: Schema.String,
 });
 export type HoldingReviewHistoryEntry = Schema.Schema.Type<typeof HoldingReviewHistoryEntry>;
@@ -374,6 +411,7 @@ export type HoldingReviewTrend = Schema.Schema.Type<typeof HoldingReviewTrend>;
 
 export const PortfolioHoldingSnapshotSummary = Schema.Struct({
   symbol: Schema.String,
+  instrumentName: Schema.optional(Schema.String),
   marketValue: Schema.Number,
   pnlAbsolute: Schema.Number,
   pnlPercent: Schema.Number,

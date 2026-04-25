@@ -1,18 +1,6 @@
 import {
-  getBrokerHoldings,
-  getBrokerTradeBook,
-  getEquityQuoteSnapshots,
-  getHoldingReviewTrend,
-  getPortfolioDashboard,
-  lookupCorporateEvents,
-  lookupAmfiNav,
-  reviewSyncedBrokerPortfolio,
-  reviewBrokerHoldingsAgainstResearch,
-  syncBrokerPortfolio,
-  runEquityResearch,
-  searchEquities,
+  createTradeAiWorkflowService,
   summarizeDailyResearch,
-  runDailyResearch,
   summarizeBrokerHolding,
   summarizeHoldingsReview,
   summarizeHoldingReviewTrendReport,
@@ -30,13 +18,15 @@ import {
   type ExtensionAPI,
 } from "@mariozechner/pi-coding-agent";
 
+const tradeAi = createTradeAiWorkflowService();
+
 const tradeAiSnapshotTool = defineTool({
   name: "tradeai_daily_research_snapshot",
   label: "TradeAI Snapshot",
-  description: "Return the current TradeAI daily research snapshot and recommendation summary.",
+  description: "Return the explicit demo TradeAI research snapshot and recommendation summary.",
   parameters: Type.Object({}),
   async execute() {
-    const result = await Effect.runPromise(runDailyResearch);
+    const result = await Effect.runPromise(tradeAi.runDemoResearchSnapshot());
     const summary = summarizeDailyResearch(result);
 
     return {
@@ -59,7 +49,7 @@ const tradeAiAmfiNavLookupTool = defineTool({
     query: Type.String({ description: "Scheme code or part of the scheme name." }),
   }),
   async execute(_toolCallId, params) {
-    const entries = await Effect.runPromise(lookupAmfiNav(params.query));
+    const entries = await Effect.runPromise(tradeAi.lookupAmfiNav(params.query));
     const summary =
       entries.length === 0
         ? "No AMFI schemes matched the query."
@@ -88,7 +78,7 @@ const tradeAiEquitySearchTool = defineTool({
     query: Type.String({ description: "Company or trading symbol to search for." }),
   }),
   async execute(_toolCallId, params) {
-    const entries = await Effect.runPromise(searchEquities(params.query));
+    const entries = await Effect.runPromise(tradeAi.searchEquities(params.query));
     const summary =
       entries.length === 0
         ? "No equity instruments matched the query."
@@ -118,7 +108,7 @@ const tradeAiEquityQuoteTool = defineTool({
     instrumentKeys: Type.Array(Type.String({ description: "Upstox instrument key." })),
   }),
   async execute(_toolCallId, params) {
-    const snapshots = await Effect.runPromise(getEquityQuoteSnapshots(params.instrumentKeys));
+    const snapshots = await Effect.runPromise(tradeAi.getEquityQuoteSnapshots({ instrumentKeys: params.instrumentKeys }));
     const summary =
       snapshots.length === 0
         ? "No quote snapshots were returned."
@@ -146,7 +136,7 @@ const tradeAiEquityResearchTool = defineTool({
     query: Type.String({ description: "Company or trading symbol to research." }),
   }),
   async execute(_toolCallId, params) {
-    const result = await Effect.runPromise(runEquityResearch(params.query));
+    const result = await Effect.runPromise(tradeAi.runEquityResearch({ query: params.query }));
     const summary = summarizeDailyResearch(result);
 
     return {
@@ -169,7 +159,7 @@ const tradeAiCorporateEventsTool = defineTool({
     query: Type.String({ description: "Company name, symbol, or event query." }),
   }),
   async execute(_toolCallId, params) {
-    const events = await Effect.runPromise(lookupCorporateEvents(params.query));
+    const events = await Effect.runPromise(tradeAi.lookupCorporateEvents(params.query));
     const summary =
       events.length === 0
         ? "No corporate events matched the query."
@@ -194,7 +184,7 @@ const tradeAiBrokerHoldingsTool = defineTool({
   description: "Fetch current INDstocks or INDmoney-linked holdings.",
   parameters: Type.Object({}),
   async execute() {
-    const holdings = await Effect.runPromise(getBrokerHoldings());
+    const holdings = await Effect.runPromise(tradeAi.getBrokerHoldings());
     const summary =
       holdings.length === 0
         ? "No broker holdings returned."
@@ -203,6 +193,7 @@ const tradeAiBrokerHoldingsTool = defineTool({
             .map((holding) =>
               summarizeBrokerHolding(
                 holding.tradingSymbol,
+                holding.instrumentName,
                 holding.quantity,
                 holding.averagePrice,
                 holding.pnlPercent,
@@ -226,7 +217,7 @@ const tradeAiBrokerTradeBookTool = defineTool({
   }),
   async execute(_toolCallId, params) {
     const segment = params.segment === "DERIVATIVE" ? "DERIVATIVE" : "EQUITY";
-    const fills = await Effect.runPromise(getBrokerTradeBook(segment));
+    const fills = await Effect.runPromise(tradeAi.getBrokerTradeBook({ segment }));
     const summary =
       fills.length === 0
         ? "No broker trade fills returned."
@@ -250,7 +241,7 @@ const tradeAiBrokerSyncTool = defineTool({
   description: "Fetch holdings and trade fills, compare against the latest persisted snapshot, and persist the new snapshot when DATABASE_URL is configured.",
   parameters: Type.Object({}),
   async execute() {
-    const report = await Effect.runPromise(syncBrokerPortfolio());
+    const report = await Effect.runPromise(tradeAi.syncBrokerPortfolio());
     const summary = [
       summarizePortfolioSyncReport(report),
       summarizePortfolioDiff(
@@ -277,7 +268,7 @@ const tradeAiHoldingsReviewTool = defineTool({
   description: "Run current research against live broker holdings and classify each holding as aligned, review, or conflict.",
   parameters: Type.Object({}),
   async execute() {
-    const report = await Effect.runPromise(reviewBrokerHoldingsAgainstResearch());
+    const report = await Effect.runPromise(tradeAi.reviewBrokerHoldingsAgainstResearch());
     const summary = [
       summarizeHoldingsReview(report),
       ...report.reviews.slice(0, 10).map((review) => `${review.symbol} | ${review.status} | ${review.reason}`),
@@ -299,7 +290,7 @@ const tradeAiPortfolioDecisionTool = defineTool({
   description: "Run the full broker portfolio sync and holdings review workflow and summarize the decision state.",
   parameters: Type.Object({}),
   async execute() {
-    const report = await Effect.runPromise(reviewSyncedBrokerPortfolio());
+    const report = await Effect.runPromise(tradeAi.reviewSyncedBrokerPortfolio());
     const summary = [
       summarizePortfolioDecisionReport(report),
       summarizePortfolioDiff(
@@ -331,7 +322,7 @@ const tradeAiHoldingHistoryTool = defineTool({
     symbol: Type.String({ description: "Held broker symbol, for example RELIANCE-EQ" }),
   }),
   async execute(_toolCallId, params) {
-    const trend = await Effect.runPromise(getHoldingReviewTrend(params.symbol));
+    const trend = await Effect.runPromise(tradeAi.getHoldingReviewTrend({ symbol: params.symbol }));
     const summary = trend
       ? [
           summarizeHoldingReviewTrendReport(trend),
@@ -355,7 +346,7 @@ const tradeAiPortfolioDashboardTool = defineTool({
   description: "Load the latest persisted portfolio dashboard with current review counts, conflicts, and streaks.",
   parameters: Type.Object({}),
   async execute() {
-    const report = await Effect.runPromise(getPortfolioDashboard());
+    const report = await Effect.runPromise(tradeAi.getPortfolioDashboard());
     const summary = [
       summarizePortfolioDashboardReport(report),
       ...report.topConflicts.slice(0, 5).map((review) => `${review.symbol} | ${review.status}`),
@@ -390,9 +381,9 @@ export default function tradeAiExtension(pi: ExtensionAPI) {
   pi.registerTool(tradeAiPortfolioDashboardTool);
 
   pi.registerCommand("tradeai-status", {
-    description: "Show the current deterministic TradeAI research snapshot.",
+    description: "Show the explicit demo TradeAI research snapshot.",
     handler: async (_args: string, ctx: ExtensionCommandContext) => {
-      const result = await Effect.runPromise(runDailyResearch);
+      const result = await Effect.runPromise(tradeAi.runDemoResearchSnapshot());
       ctx.ui.notify(summarizeDailyResearch(result), "info");
     },
   });
@@ -400,7 +391,7 @@ export default function tradeAiExtension(pi: ExtensionAPI) {
   pi.registerCommand("tradeai-amfi", {
     description: "Look up mutual fund NAV data from the AMFI feed.",
     handler: async (args: string, ctx: ExtensionCommandContext) => {
-      const entries = await Effect.runPromise(lookupAmfiNav(args));
+      const entries = await Effect.runPromise(tradeAi.lookupAmfiNav(args));
       const message =
         entries.length === 0
           ? "No AMFI schemes matched the query."
@@ -415,7 +406,7 @@ export default function tradeAiExtension(pi: ExtensionAPI) {
   pi.registerCommand("tradeai-equity-search", {
     description: "Search Indian equities through Upstox.",
     handler: async (args: string, ctx: ExtensionCommandContext) => {
-      const entries = await Effect.runPromise(searchEquities(args));
+      const entries = await Effect.runPromise(tradeAi.searchEquities(args));
       const message =
         entries.length === 0
           ? "No equity instruments matched the query."
@@ -430,7 +421,7 @@ export default function tradeAiExtension(pi: ExtensionAPI) {
   pi.registerCommand("tradeai-equity-research", {
     description: "Run the current equity research flow through TradeAI.",
     handler: async (args: string, ctx: ExtensionCommandContext) => {
-      const result = await Effect.runPromise(runEquityResearch(args));
+      const result = await Effect.runPromise(tradeAi.runEquityResearch({ query: args }));
       ctx.ui.notify(summarizeDailyResearch(result), "info");
     },
   });
@@ -438,7 +429,7 @@ export default function tradeAiExtension(pi: ExtensionAPI) {
   pi.registerCommand("tradeai-events", {
     description: "Search recent BSE corporate announcement events.",
     handler: async (args: string, ctx: ExtensionCommandContext) => {
-      const events = await Effect.runPromise(lookupCorporateEvents(args));
+      const events = await Effect.runPromise(tradeAi.lookupCorporateEvents(args));
       const message =
         events.length === 0
           ? "No corporate events matched the query."
@@ -453,7 +444,7 @@ export default function tradeAiExtension(pi: ExtensionAPI) {
   pi.registerCommand("tradeai-holdings", {
     description: "Fetch current broker holdings from INDstocks.",
     handler: async (_args: string, ctx: ExtensionCommandContext) => {
-      const holdings = await Effect.runPromise(getBrokerHoldings());
+      const holdings = await Effect.runPromise(tradeAi.getBrokerHoldings());
       const message =
         holdings.length === 0
           ? "No holdings returned."
@@ -462,6 +453,7 @@ export default function tradeAiExtension(pi: ExtensionAPI) {
               .map((holding) =>
                 summarizeBrokerHolding(
                   holding.tradingSymbol,
+                  holding.instrumentName,
                   holding.quantity,
                   holding.averagePrice,
                   holding.pnlPercent,
@@ -475,7 +467,7 @@ export default function tradeAiExtension(pi: ExtensionAPI) {
   pi.registerCommand("tradeai-review-holdings", {
     description: "Run research against current broker holdings and classify the results.",
     handler: async (_args: string, ctx: ExtensionCommandContext) => {
-      const report = await Effect.runPromise(reviewBrokerHoldingsAgainstResearch());
+      const report = await Effect.runPromise(tradeAi.reviewBrokerHoldingsAgainstResearch());
       const message = [
         summarizeHoldingsReview(report),
         ...report.reviews.slice(0, 5).map((review) => `${review.symbol} | ${review.status}`),
@@ -487,7 +479,7 @@ export default function tradeAiExtension(pi: ExtensionAPI) {
   pi.registerCommand("tradeai-sync", {
     description: "Run the broker holdings snapshot sync and diff flow.",
     handler: async (_args: string, ctx: ExtensionCommandContext) => {
-      const report = await Effect.runPromise(syncBrokerPortfolio());
+      const report = await Effect.runPromise(tradeAi.syncBrokerPortfolio());
       const message = [
         summarizePortfolioSyncReport(report),
         summarizePortfolioDiff(
@@ -504,7 +496,7 @@ export default function tradeAiExtension(pi: ExtensionAPI) {
   pi.registerCommand("tradeai-portfolio-decision", {
     description: "Run the combined sync and holdings review workflow.",
     handler: async (_args: string, ctx: ExtensionCommandContext) => {
-      const report = await Effect.runPromise(reviewSyncedBrokerPortfolio());
+      const report = await Effect.runPromise(tradeAi.reviewSyncedBrokerPortfolio());
       const message = [
         summarizePortfolioDecisionReport(report),
         summarizePortfolioDiff(
@@ -522,7 +514,7 @@ export default function tradeAiExtension(pi: ExtensionAPI) {
   pi.registerCommand("tradeai-holding-history", {
     description: "Show persisted holdings review history for one symbol.",
     handler: async (args: string, ctx: ExtensionCommandContext) => {
-      const trend = await Effect.runPromise(getHoldingReviewTrend(args));
+      const trend = await Effect.runPromise(tradeAi.getHoldingReviewTrend({ symbol: args }));
       const message = trend
         ? [
             summarizeHoldingReviewTrendReport(trend),
@@ -540,7 +532,9 @@ export default function tradeAiExtension(pi: ExtensionAPI) {
         args.trim() === "manual_csv" || args.trim() === "indstocks"
           ? (args.trim() as "manual_csv" | "indstocks")
           : undefined;
-      const report = await Effect.runPromise(getPortfolioDashboard(broker));
+      const report = await Effect.runPromise(
+        tradeAi.getPortfolioDashboard(broker ? { broker } : {}),
+      );
       const message = [
         summarizePortfolioDashboardReport(report),
         ...report.topConflicts.slice(0, 5).map((review) => `${review.symbol} | ${review.status}`),

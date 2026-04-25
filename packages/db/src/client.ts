@@ -36,13 +36,15 @@ export const resolveDatabaseUrl = (databaseUrl?: string): string => {
   return resolved;
 };
 
-export const hasDatabaseUrl = (databaseUrl?: string): boolean =>
+export const hasConfiguredDatabaseUrl = (databaseUrl?: string): boolean =>
   Boolean(
     databaseUrl?.trim() ||
       process.env[DATABASE_URL_ENV]?.trim() ||
-      readEnvFileValue(DATABASE_URL_ENV) ||
-      DEFAULT_LOCAL_DATABASE_URL,
+      readEnvFileValue(DATABASE_URL_ENV),
   );
+
+export const hasDatabaseUrl = (databaseUrl?: string): boolean =>
+  Boolean(resolveDatabaseUrl(databaseUrl));
 
 export const createDatabaseConnection = (databaseUrl?: string) => {
   const connectionString = resolveDatabaseUrl(databaseUrl);

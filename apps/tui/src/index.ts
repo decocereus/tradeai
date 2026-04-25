@@ -2,31 +2,11 @@ import {
   createPiTradeAiSession,
   inspectPiResources,
 } from "@tradeai/agent-runtime";
-import type { PortfolioDashboardReport } from "@tradeai/domain";
 import {
-  canPersistPortfolioMemory,
-  diffBrokerPortfolioAgainstLatestSnapshot,
-  getBrokerHoldings,
-  getBrokerPortfolioSummary,
-  getBrokerTradeBook,
-  getEquityQuoteSnapshots,
-  getHoldingReviewTrend,
-  getPortfolioDashboard,
-  importManualPortfolioSnapshot,
-  lookupCorporateEvents,
-  lookupAmfiNav,
-  persistBrokerPortfolioMemorySnapshot,
-  reviewSyncedBrokerPortfolio,
-  reviewBrokerHoldingsAgainstResearch,
-  reviewImportedPortfolioDecision,
-  syncBrokerPortfolio,
-  runDailyResearch,
-  runEquityResearch,
-  searchEquities,
+  createTradeAiWorkflowService,
   summarizeBrokerHolding,
   summarizeHoldingsReview,
   summarizeHoldingReviewTrendReport,
-  summarizePortfolioDashboardReport,
   summarizePortfolioDecisionReport,
   summarizePortfolioSyncReport,
   summarizePortfolioDiff,
@@ -37,247 +17,46 @@ import {
   summarizeQuoteSnapshot,
 } from "@tradeai/app-services";
 import { Effect } from "effect";
+import { parseTuiCliOptions } from "./cli-options.ts";
+import { renderDashboardSection, renderDivider, renderList } from "./render.ts";
 
-const renderList = (title: string, items: readonly string[]) => {
-  console.log(`\n${title}`);
-  for (const item of items) {
-    console.log(`- ${item}`);
-  }
-};
+const {
+  piPrompt,
+  amfiQuery,
+  upstoxSearchQuery,
+  upstoxQuoteKeys,
+  equityResearchQuery,
+  eventsQuery,
+  holdingsFlag,
+  tradeBookSegment,
+  persistHoldingsFlag,
+  diffHoldingsFlag,
+  syncPortfolioFlag,
+  reviewHoldingsFlag,
+  portfolioDecisionFlag,
+  dashboardFlag,
+  dashboardBroker,
+  holdingHistorySymbol,
+  holdingHistoryBroker,
+  importHoldingsPath,
+  importTradesPath,
+  manualDecisionFlag,
+  hasExplicitPrimaryAction,
+} = parseTuiCliOptions(process.argv.slice(2));
 
-const renderDivider = (title: string) => {
-  console.log(`\n== ${title} ==`);
-};
-
-const args = process.argv.slice(2);
-const piPromptIndex = args.findIndex((arg) => arg === "--pi");
-const amfiQueryIndex = args.findIndex((arg) => arg === "--amfi");
-const upstoxSearchIndex = args.findIndex((arg) => arg === "--upstox-search");
-const upstoxQuoteIndex = args.findIndex((arg) => arg === "--upstox-quote");
-const eventsIndex = args.findIndex((arg) => arg === "--events");
-const holdingsFlag = args.includes("--holdings");
-const tradeBookIndex = args.findIndex((arg) => arg === "--trade-book");
-const persistHoldingsFlag = args.includes("--persist-holdings");
-const diffHoldingsFlag = args.includes("--diff-holdings");
-const syncPortfolioFlag = args.includes("--sync-portfolio");
-const reviewHoldingsFlag = args.includes("--review-holdings");
-const portfolioDecisionFlag = args.includes("--portfolio-decision");
-const dashboardFlag = args.includes("--dashboard");
-const dashboardBrokerIndex = args.findIndex((arg) => arg === "--dashboard-broker");
-const holdingHistoryIndex = args.findIndex((arg) => arg === "--holding-history");
-const holdingHistoryBrokerIndex = args.findIndex((arg) => arg === "--holding-history-broker");
-const importHoldingsIndex = args.findIndex((arg) => arg === "--import-holdings");
-const importTradesIndex = args.findIndex((arg) => arg === "--import-trades");
-const manualDecisionFlag = args.includes("--manual-decision");
-const piPrompt =
-  piPromptIndex >= 0 ? args.slice(piPromptIndex + 1).join(" ").trim() || "Summarize this repo." : undefined;
-const amfiQuery =
-  amfiQueryIndex >= 0 ? args.slice(amfiQueryIndex + 1).join(" ").trim() || "parag parikh" : undefined;
-const upstoxSearchQuery =
-  upstoxSearchIndex >= 0
-    ? args.slice(upstoxSearchIndex + 1).join(" ").trim() || "reliance"
-    : undefined;
-const equityResearchIndex = args.findIndex((arg) => arg === "--equity-research");
-const upstoxQuoteKeys =
-  upstoxQuoteIndex >= 0
-    ? args
-        .slice(upstoxQuoteIndex + 1)
-        .join(" ")
-        .split(",")
-        .map((value) => value.trim())
-        .filter(Boolean)
-    : undefined;
-const equityResearchQuery =
-  equityResearchIndex >= 0
-    ? args.slice(equityResearchIndex + 1).join(" ").trim() || "reliance"
-    : undefined;
-const eventsQuery =
-  eventsIndex >= 0 ? args.slice(eventsIndex + 1).join(" ").trim() || "reliance" : undefined;
-const tradeBookSegment =
-  tradeBookIndex >= 0
-    ? (args.slice(tradeBookIndex + 1).join(" ").trim().toUpperCase() || "EQUITY")
-    : undefined;
-const holdingHistorySymbol =
-  holdingHistoryIndex >= 0
-    ? args[holdingHistoryIndex + 1]?.trim() || "RELIANCE-EQ"
-    : undefined;
-const dashboardBrokerRaw =
-  dashboardBrokerIndex >= 0 ? args[dashboardBrokerIndex + 1]?.trim().toLowerCase() : undefined;
-const dashboardBroker =
-  dashboardBrokerRaw === "indstocks" || dashboardBrokerRaw === "manual_csv"
-    ? dashboardBrokerRaw
-    : undefined;
-const holdingHistoryBrokerRaw =
-  holdingHistoryBrokerIndex >= 0
-    ? args[holdingHistoryBrokerIndex + 1]?.trim().toLowerCase()
-    : undefined;
-const holdingHistoryBroker =
-  holdingHistoryBrokerRaw === "indstocks" || holdingHistoryBrokerRaw === "manual_csv"
-    ? holdingHistoryBrokerRaw
-    : undefined;
-const importHoldingsPath =
-  importHoldingsIndex >= 0 ? args[importHoldingsIndex + 1] : undefined;
-const importTradesPath =
-  importTradesIndex >= 0 ? args[importTradesIndex + 1] : undefined;
-
-const hasExplicitPrimaryAction =
-  Boolean(piPrompt) ||
-  Boolean(amfiQuery) ||
-  Boolean(upstoxSearchQuery) ||
-  Boolean(upstoxQuoteKeys?.length) ||
-  Boolean(equityResearchQuery) ||
-  Boolean(eventsQuery) ||
-  holdingsFlag ||
-  Boolean(tradeBookSegment) ||
-  persistHoldingsFlag ||
-  diffHoldingsFlag ||
-  syncPortfolioFlag ||
-  reviewHoldingsFlag ||
-  portfolioDecisionFlag ||
-  Boolean(holdingHistorySymbol) ||
-  Boolean(importHoldingsPath) ||
-  manualDecisionFlag;
-
-const shouldAutoRenderDashboard = !dashboardFlag && !hasExplicitPrimaryAction && canPersistPortfolioMemory();
+const tradeAi = createTradeAiWorkflowService();
+const shouldAutoRenderDashboard =
+  !dashboardFlag && !hasExplicitPrimaryAction && tradeAi.canPersistPortfolioMemory();
 const shouldRenderDashboard = dashboardFlag || shouldAutoRenderDashboard;
-
-const renderDashboardSection = (
-  report: PortfolioDashboardReport,
-  options?: {
-    autoHome?: boolean;
-  },
-) => {
-  console.log(summarizePortfolioDashboardReport(report));
-  if (report.latestSnapshot) {
-    console.log(
-      summarizePortfolioSummary(
-        report.latestSnapshot.summary.holdingsCount,
-        report.latestSnapshot.summary.totalMarketValue,
-        report.latestSnapshot.summary.weightedPnlPercent,
-      ),
-    );
-  }
-
-  if (report.recentSnapshots.length > 0) {
-    renderList(
-      "Recent snapshots",
-      report.recentSnapshots.map(
-        (snapshot) => `${snapshot.capturedAt} | ${snapshot.broker} | ${snapshot.snapshotId}`,
-      ),
-    );
-  }
-
-  if (report.latestReview) {
-    console.log(summarizeHoldingsReview(report.latestReview));
-  }
-
-  if (report.latestDiff) {
-    console.log(
-      summarizePortfolioDiff(
-        report.latestDiff.newPositions,
-        report.latestDiff.exitedPositions,
-        report.latestDiff.changedPositions,
-        report.latestDiff.unchangedPositions,
-      ),
-    );
-  }
-
-  if (report.reviewSnapshot && report.reviewSnapshot.snapshotId !== report.latestSnapshot?.snapshotId) {
-    console.log(
-      `Review snapshot: ${report.reviewSnapshot.capturedAt} | ${report.reviewSnapshot.snapshotId}`,
-    );
-  }
-
-  if (report.todaysActions.length > 0) {
-    renderList(
-      "Today's action list",
-      report.todaysActions.map(
-        (action) => `[${action.priority}] ${action.title} | ${action.detail}`,
-      ),
-    );
-  }
-
-  if (report.topWinners.length > 0) {
-    renderList(
-      "Top winners",
-      report.topWinners.map(
-        (position) =>
-          `${position.symbol} | pnl ${position.pnlPercent.toFixed(2)}% | value ${position.marketValue.toFixed(2)}`,
-      ),
-    );
-  }
-
-  if (report.topLosers.length > 0) {
-    renderList(
-      "Top losers",
-      report.topLosers.map(
-        (position) =>
-          `${position.symbol} | pnl ${position.pnlPercent.toFixed(2)}% | value ${position.marketValue.toFixed(2)}`,
-      ),
-    );
-  }
-
-  if (report.topConflicts.length > 0) {
-    renderList(
-      "Top conflicts",
-      report.topConflicts.map(
-        (review) => `${review.symbol} | ${review.status} | ${review.reason}`,
-      ),
-    );
-  }
-
-  if (report.topReviewCandidates.length > 0) {
-    renderList(
-      "Top review candidates",
-      report.topReviewCandidates.map(
-        (review) => `${review.symbol} | ${review.status} | ${review.reason}`,
-      ),
-    );
-  }
-
-  if (report.statusChanges.length > 0) {
-    renderList(
-      "Status changes",
-      report.statusChanges.map((change) =>
-        change.changeType === "newly_reviewed"
-          ? `${change.symbol} | ${change.currentStatus} | newly reviewed`
-          : `${change.symbol} | ${change.previousStatus} -> ${change.currentStatus}`,
-      ),
-    );
-  }
-
-  if (report.unreviewedPositions.length > 0) {
-    renderList(
-      "New positions without review",
-      report.unreviewedPositions.map(
-        (position) =>
-          `${position.symbol} | pnl ${position.pnlPercent.toFixed(2)}% | value ${position.marketValue.toFixed(2)}`,
-      ),
-    );
-  }
-
-  if (report.streakLeaders.length > 0) {
-    renderList(
-      "Longest active streaks",
-      report.streakLeaders.map(summarizeHoldingReviewTrendReport),
-    );
-  }
-
-  if (options?.autoHome) {
-    renderList("Quick commands", [
-      "bun run dev:tui -- --manual-decision --import-holdings /path/to/holdings.csv --import-trades /path/to/trades.csv",
-      "bun run dev:tui -- --holding-history RELIANCE-EQ --holding-history-broker manual_csv",
-      "bun run dev:tui -- --dashboard",
-    ]);
-  }
-};
 
 const main = Effect.gen(function* () {
   if (shouldAutoRenderDashboard) {
     console.log("TradeAI Home");
     console.log("============");
     renderDivider("Portfolio Dashboard");
-    const report = yield* getPortfolioDashboard(dashboardBroker).pipe(
+    const report = yield* tradeAi.getPortfolioDashboard(
+      dashboardBroker ? { broker: dashboardBroker } : {},
+    ).pipe(
       Effect.catchAll((error) => {
         console.log(error instanceof Error ? error.message : String(error));
         return Effect.succeed(undefined);
@@ -293,40 +72,10 @@ const main = Effect.gen(function* () {
     return;
   }
 
-  const result = yield* runDailyResearch;
   const piResources = yield* inspectPiResources();
 
   console.log("TradeAI Research Cockpit");
   console.log("========================");
-
-  renderDivider("Baseline Research");
-  console.log(`Run label: ${result.runLabel}`);
-  console.log(summarizeDailyResearch(result));
-  console.log(`Sector score: ${result.sectorScore.total}/100 (${result.sectorScore.label})`);
-  console.log(`Instrument score: ${result.instrumentScore.total}/100 (${result.instrumentScore.label})`);
-  console.log(`Portfolio fit: ${result.portfolioFit.total}/100 (${result.portfolioFit.label})`);
-
-  renderList("Why it scored well", result.recommendation.keyReasons);
-  renderList("Main risks", result.recommendation.mainRisks);
-  renderList("Invalidation conditions", result.recommendation.invalidationConditions);
-  renderList("Memory context", result.memoryContext.notes);
-  if (result.technicalAnalysis) {
-    renderDivider("Technical Analysis");
-    console.log(`Trend: ${result.technicalAnalysis.trend}`);
-    console.log(`Latest close: ${result.technicalAnalysis.latestClose}`);
-    if (result.technicalAnalysis.sma20 !== undefined) {
-      console.log(`SMA20: ${result.technicalAnalysis.sma20.toFixed(2)}`);
-    }
-    if (result.technicalAnalysis.sma50 !== undefined) {
-      console.log(`SMA50: ${result.technicalAnalysis.sma50.toFixed(2)}`);
-    }
-    if (result.technicalAnalysis.rsi14 !== undefined) {
-      console.log(`RSI14: ${result.technicalAnalysis.rsi14.toFixed(2)}`);
-    }
-    if (result.technicalAnalysis.oneMonthReturnPct !== undefined) {
-      console.log(`1M return: ${result.technicalAnalysis.oneMonthReturnPct.toFixed(2)}%`);
-    }
-  }
 
   renderDivider("Pi Resources");
   console.log(`Extensions discovered: ${piResources.extensionCount}`);
@@ -376,7 +125,7 @@ const main = Effect.gen(function* () {
   }
 
   if (amfiQuery) {
-    const amfiEntries = yield* lookupAmfiNav(amfiQuery).pipe(
+    const amfiEntries = yield* tradeAi.lookupAmfiNav(amfiQuery).pipe(
       Effect.catchAll((error) => {
         console.log("\nAMFI lookup error");
         console.log(error instanceof Error ? error.message : String(error));
@@ -398,7 +147,7 @@ const main = Effect.gen(function* () {
   }
 
   if (upstoxSearchQuery) {
-    const upstoxSearchResults = yield* searchEquities(upstoxSearchQuery).pipe(
+    const upstoxSearchResults = yield* tradeAi.searchEquities(upstoxSearchQuery).pipe(
       Effect.catchAll((error) => {
         console.log("\nUpstox equity search error");
         console.log(error instanceof Error ? error.message : String(error));
@@ -420,7 +169,9 @@ const main = Effect.gen(function* () {
   }
 
   if (upstoxQuoteKeys?.length) {
-    const upstoxQuoteResults = yield* getEquityQuoteSnapshots(upstoxQuoteKeys).pipe(
+    const upstoxQuoteResults = yield* tradeAi.getEquityQuoteSnapshots({
+      instrumentKeys: upstoxQuoteKeys,
+    }).pipe(
       Effect.catchAll((error) => {
         console.log("\nUpstox quote error");
         console.log(error instanceof Error ? error.message : String(error));
@@ -442,7 +193,9 @@ const main = Effect.gen(function* () {
   }
 
   if (equityResearchQuery) {
-    const equityResearchResult = yield* runEquityResearch(equityResearchQuery).pipe(
+    const equityResearchResult = yield* tradeAi.runEquityResearch({
+      query: equityResearchQuery,
+    }).pipe(
       Effect.catchAll((error) => {
         console.log("\nEquity research error");
         console.log(error instanceof Error ? error.message : String(error));
@@ -471,7 +224,7 @@ const main = Effect.gen(function* () {
   }
 
   if (eventsQuery) {
-    const events = yield* lookupCorporateEvents(eventsQuery).pipe(
+    const events = yield* tradeAi.lookupCorporateEvents(eventsQuery).pipe(
       Effect.catchAll((error) => {
         console.log("\nCorporate events error");
         console.log(error instanceof Error ? error.message : String(error));
@@ -493,16 +246,15 @@ const main = Effect.gen(function* () {
   }
 
   if (holdingsFlag) {
-    const portfolioSummary = yield* getBrokerPortfolioSummary().pipe(
-      Effect.catchAll(() => Effect.succeed(undefined)),
-    );
-    const holdings = yield* getBrokerHoldings().pipe(
+    const holdings = yield* tradeAi.getBrokerHoldings().pipe(
       Effect.catchAll((error) => {
         console.log("\nBroker holdings error");
         console.log(error instanceof Error ? error.message : String(error));
         return Effect.succeed([]);
       }),
     );
+    const portfolioSummary =
+      holdings.length > 0 ? tradeAi.summarizeBrokerHoldingsCollection(holdings) : undefined;
 
     renderDivider("Broker Holdings");
     if (portfolioSummary) {
@@ -527,6 +279,7 @@ const main = Effect.gen(function* () {
         console.log(
           `- ${summarizeBrokerHolding(
             holding.tradingSymbol,
+            holding.instrumentName,
             holding.quantity,
             holding.averagePrice,
             holding.pnlPercent,
@@ -540,10 +293,10 @@ const main = Effect.gen(function* () {
 
   if (persistHoldingsFlag) {
     renderDivider("Persist Holdings Snapshot");
-    if (!canPersistPortfolioMemory()) {
+    if (!tradeAi.canPersistPortfolioMemory()) {
       console.log("DATABASE_URL is not configured. Snapshot persistence is unavailable.");
     } else {
-      const persisted = yield* persistBrokerPortfolioMemorySnapshot().pipe(
+      const persisted = yield* tradeAi.persistBrokerPortfolioMemorySnapshot().pipe(
         Effect.catchAll((error) => {
           console.log(error instanceof Error ? error.message : String(error));
           return Effect.succeed(undefined);
@@ -564,7 +317,7 @@ const main = Effect.gen(function* () {
 
   if (tradeBookSegment) {
     const segment = tradeBookSegment === "DERIVATIVE" ? "DERIVATIVE" : "EQUITY";
-    const fills = yield* getBrokerTradeBook(segment).pipe(
+    const fills = yield* tradeAi.getBrokerTradeBook({ segment }).pipe(
       Effect.catchAll((error) => {
         console.log("\nBroker trade-book error");
         console.log(error instanceof Error ? error.message : String(error));
@@ -589,10 +342,10 @@ const main = Effect.gen(function* () {
 
   if (diffHoldingsFlag) {
     renderDivider("Portfolio Diff");
-    if (!canPersistPortfolioMemory()) {
+    if (!tradeAi.canPersistPortfolioMemory()) {
       console.log("DATABASE_URL is not configured. Snapshot diffing is unavailable.");
     } else {
-      const diffResult = yield* diffBrokerPortfolioAgainstLatestSnapshot().pipe(
+      const diffResult = yield* tradeAi.diffBrokerPortfolioAgainstLatestSnapshot().pipe(
         Effect.catchAll((error) => {
           console.log(error instanceof Error ? error.message : String(error));
           return Effect.succeed(undefined);
@@ -621,7 +374,7 @@ const main = Effect.gen(function* () {
 
   if (syncPortfolioFlag) {
     renderDivider("Portfolio Sync");
-    const report = yield* syncBrokerPortfolio().pipe(
+    const report = yield* tradeAi.syncBrokerPortfolio().pipe(
       Effect.catchAll((error) => {
         console.log(error instanceof Error ? error.message : String(error));
         return Effect.succeed(undefined);
@@ -650,7 +403,7 @@ const main = Effect.gen(function* () {
 
   if (reviewHoldingsFlag) {
     renderDivider("Holdings Review");
-    const report = yield* reviewBrokerHoldingsAgainstResearch().pipe(
+    const report = yield* tradeAi.reviewBrokerHoldingsAgainstResearch().pipe(
       Effect.catchAll((error) => {
         console.log(error instanceof Error ? error.message : String(error));
         return Effect.succeed(undefined);
@@ -671,7 +424,7 @@ const main = Effect.gen(function* () {
 
   if (portfolioDecisionFlag) {
     renderDivider("Portfolio Decision");
-    const report = yield* reviewSyncedBrokerPortfolio().pipe(
+    const report = yield* tradeAi.reviewSyncedBrokerPortfolio().pipe(
       Effect.catchAll((error) => {
         console.log(error instanceof Error ? error.message : String(error));
         return Effect.succeed(undefined);
@@ -701,13 +454,15 @@ const main = Effect.gen(function* () {
 
   if (shouldRenderDashboard) {
     renderDivider("Portfolio Dashboard");
-    if (!canPersistPortfolioMemory()) {
+    if (!tradeAi.canPersistPortfolioMemory()) {
       console.log("DATABASE_URL is not configured. The dashboard needs persisted local data.");
     } else {
       if (shouldAutoRenderDashboard) {
         console.log("Auto mode: showing the latest persisted portfolio dashboard.");
       }
-      const report = yield* getPortfolioDashboard(dashboardBroker).pipe(
+      const report = yield* tradeAi.getPortfolioDashboard(
+        dashboardBroker ? { broker: dashboardBroker } : {},
+      ).pipe(
         Effect.catchAll((error) => {
           console.log(error instanceof Error ? error.message : String(error));
           return Effect.succeed(undefined);
@@ -726,10 +481,13 @@ const main = Effect.gen(function* () {
 
   if (holdingHistorySymbol) {
     renderDivider("Holding Review History");
-    if (!canPersistPortfolioMemory()) {
+    if (!tradeAi.canPersistPortfolioMemory()) {
       console.log("DATABASE_URL is not configured. Review history is unavailable.");
     } else {
-      const trend = yield* getHoldingReviewTrend(holdingHistorySymbol, holdingHistoryBroker).pipe(
+      const trend = yield* tradeAi.getHoldingReviewTrend({
+        symbol: holdingHistorySymbol,
+        ...(holdingHistoryBroker ? { broker: holdingHistoryBroker } : {}),
+      }).pipe(
         Effect.catchAll((error) => {
           console.log(error instanceof Error ? error.message : String(error));
           return Effect.succeed(undefined);
@@ -751,7 +509,10 @@ const main = Effect.gen(function* () {
 
   if (importHoldingsPath) {
     renderDivider("Manual Import");
-    const imported = yield* importManualPortfolioSnapshot(importHoldingsPath, importTradesPath).pipe(
+    const imported = yield* tradeAi.importManualPortfolioSnapshot({
+      holdingsCsvPath: importHoldingsPath,
+      ...(importTradesPath ? { tradesCsvPath: importTradesPath } : {}),
+    }).pipe(
       Effect.catchAll((error) => {
         console.log(error instanceof Error ? error.message : String(error));
         return Effect.succeed(undefined);
@@ -789,10 +550,10 @@ const main = Effect.gen(function* () {
     if (!importHoldingsPath) {
       console.log("`--manual-decision` requires `--import-holdings <csv>`.");
     } else {
-      const report = yield* reviewImportedPortfolioDecision(
-        importHoldingsPath,
-        importTradesPath,
-      ).pipe(
+      const report = yield* tradeAi.reviewImportedPortfolioDecision({
+        holdingsCsvPath: importHoldingsPath,
+        ...(importTradesPath ? { tradesCsvPath: importTradesPath } : {}),
+      }).pipe(
         Effect.catchAll((error) => {
           console.log(error instanceof Error ? error.message : String(error));
           return Effect.succeed(undefined);

@@ -47,6 +47,12 @@ describe("db / review history serialization", () => {
             verdict: "buy",
             conviction: 72.5,
             runLabel: "upstox-reliance-research",
+            researchQuality: {
+              source: "upstox",
+              completeness: "partial",
+              missingSignals: ["candles"],
+              fallbacksUsed: ["neutral_score_defaults"],
+            },
           },
           {
             symbol: "INFY-EQ",
@@ -64,5 +70,6 @@ describe("db / review history serialization", () => {
 
     expect(records).toHaveLength(2);
     expect(records[1]?.status).toBe("conflict");
+    expect(records[0]?.payload.researchQuality?.missingSignals).toEqual(["candles"]);
   });
 });

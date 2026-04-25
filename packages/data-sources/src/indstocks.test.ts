@@ -4,8 +4,10 @@ import { Effect } from "effect";
 import {
   INDSTOCKS_ACCESS_TOKEN_ENV,
   INDSTOCKS_BASE_URL,
+  buildIndstocksScripCode,
   createIndstocksHeaders,
   fetchIndstocksHoldings,
+  fetchIndstocksMarketQuotes,
   fetchIndstocksTradeBook,
   mapIndstocksHolding,
   mapIndstocksTradeFill,
@@ -55,6 +57,28 @@ describe("data-sources / indstocks", () => {
     expect(holding?.broker).toBe("indstocks");
   });
 
+  it("maps compact holdings records using quote enrichment", () => {
+    const holding = mapIndstocksHolding(
+      {
+        security_id: "10576",
+        symbol: "NIFTYBEES",
+        isin: "INF204KB14I2",
+        total_qty: 11,
+        avg_price: 274.23,
+      },
+      {
+        NSE_10576: {
+          live_price: 275.87,
+          prev_close: 273.95,
+        },
+      },
+    );
+
+    expect(holding?.tradingSymbol).toBe("NIFTYBEES");
+    expect(holding?.lastTradedPrice).toBe(275.87);
+    expect(holding?.exchangeSegment).toBe("NSE_EQ");
+  });
+
   it("maps trade-book records", () => {
     const fill = mapIndstocksTradeFill({
       fill_id: 1020280,
@@ -92,6 +116,31 @@ describe("data-sources / indstocks", () => {
     expect(holdings).toHaveLength(1);
   });
 
+  it("parses compact holdings payload with quotes", () => {
+    const holdings = parseIndstocksHoldingsResponse(
+      {
+        data: [
+          {
+            security_id: "21401",
+            symbol: "TATAGOLD",
+            isin: "INF277KA1976",
+            total_qty: 108,
+            avg_price: 14.74,
+          },
+        ],
+      },
+      {
+        NSE_21401: {
+          live_price: 14.65,
+          prev_close: 14.74,
+        },
+      },
+    );
+
+    expect(holdings).toHaveLength(1);
+    expect(holdings[0]?.marketValue).toBeCloseTo(1582.2);
+  });
+
   it("parses trade-book response payload", () => {
     const fills = parseIndstocksTradeBookResponse({
       data: [
@@ -112,24 +161,32 @@ describe("data-sources / indstocks", () => {
 
   it("fetches holdings with injected fetch", async () => {
     const fetchStub = (async (input: RequestInfo | URL) => {
-      expect(String(input)).toBe(`${INDSTOCKS_BASE_URL}/portfolio/holdings`);
+      if (String(input) === `${INDSTOCKS_BASE_URL}/portfolio/holdings`) {
+        return new Response(
+          JSON.stringify({
+            data: [
+              {
+                security_id: "10576",
+                symbol: "NIFTYBEES",
+                isin: "INF204KB14I2",
+                total_qty: 11,
+                avg_price: 274.23,
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+
+      expect(String(input)).toContain("/market/quotes/full?scrip-codes=");
       return new Response(
         JSON.stringify({
-          data: [
-            {
-              security_id: "12345",
-              trading_symbol: "RELIANCE-EQ",
-              exchange_segment: "NSE_EQ",
-              isin: "INE002A01018",
-              quantity: 50,
-              average_price: 2200,
-              last_traded_price: 2505.1,
-              close_price: 2495,
-              market_value: 125255,
-              pnl_absolute: 15255,
-              pnl_percent: 13.87,
+          data: {
+            NSE_10576: {
+              live_price: 275.87,
+              prev_close: 273.95,
             },
-          ],
+          },
         }),
         { status: 200 },
       );
@@ -137,6 +194,29 @@ describe("data-sources / indstocks", () => {
 
     const holdings = await Effect.runPromise(fetchIndstocksHoldings("secret", fetchStub));
     expect(holdings).toHaveLength(1);
+    expect(holdings[0]?.tradingSymbol).toBe("NIFTYBEES");
+  });
+
+  it("fetches market quotes with injected fetch", async () => {
+    const fetchStub = (async (input: RequestInfo | URL) => {
+      expect(String(input)).toContain("scrip-codes=NSE_10576");
+      return new Response(
+        JSON.stringify({
+          data: {
+            NSE_10576: {
+              live_price: 275.87,
+              prev_close: 273.95,
+            },
+          },
+        }),
+        { status: 200 },
+      );
+    }) as unknown as typeof fetch;
+
+    const quotes = await Effect.runPromise(
+      fetchIndstocksMarketQuotes([buildIndstocksScripCode("10576")], "secret", fetchStub),
+    );
+    expect(quotes.NSE_10576?.live_price).toBe(275.87);
   });
 
   it("fetches trade-book with injected fetch", async () => {

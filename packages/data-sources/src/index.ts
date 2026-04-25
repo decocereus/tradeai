@@ -2,6 +2,7 @@ export * from "./amfi.ts";
 export * from "./bse-events.ts";
 export * from "./demo.ts";
 export * from "./indstocks.ts";
+export * from "./indstocks-research.ts";
 export * from "./manual-import.ts";
 export * from "./upstox-candles.ts";
 export * from "./upstox-fundamentals.ts";
