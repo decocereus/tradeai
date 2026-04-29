@@ -7,6 +7,7 @@ import type {
 import { Effect } from "effect";
 
 import { createApiRequestHandler } from "./server.ts";
+import { operatorPageHtml } from "./operator-page.ts";
 
 const readJson = async (response: Response) => response.json() as Promise<Record<string, unknown>>;
 
@@ -58,6 +59,14 @@ describe("api server", () => {
     expect(response.headers.get("content-type")).toContain("text/html");
     expect(body).toContain("TradeAI Operator");
     expect(body).toContain("/operator/daily");
+  });
+
+  it("keeps operator page rendering away from HTML sinks", () => {
+    expect(operatorPageHtml).not.toContain("innerHTML");
+    expect(operatorPageHtml).not.toContain("outerHTML");
+    expect(operatorPageHtml).not.toContain("insertAdjacentHTML");
+    expect(operatorPageHtml).toContain("textContent");
+    expect(operatorPageHtml).toContain("replaceChildren");
   });
 
   it("validates required query params", async () => {

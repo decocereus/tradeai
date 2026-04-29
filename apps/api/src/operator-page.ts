@@ -371,56 +371,132 @@ export const operatorPageHtml = `<!doctype html>
         byId(id).textContent = value;
       };
 
-      const empty = (text) => '<div class="empty">' + text + '</div>';
-
-      const renderActions = (actions) => {
-        if (!actions.length) return empty("No action items.");
-        return actions.map((action) => (
-          '<article class="action">' +
-            '<h3><span class="pill ' + (action.priority === "high" ? "bad" : "warn") + '">' + action.priority + '</span> ' + action.title + '</h3>' +
-            '<p>' + action.detail + '</p>' +
-          '</article>'
-        )).join("");
+      const el = (tag, options = {}) => {
+        const node = document.createElement(tag);
+        if (options.className) node.className = options.className;
+        if (options.text !== undefined) node.textContent = String(options.text);
+        return node;
       };
 
-      const renderHoldings = (holdings) => {
-        if (!holdings.length) return empty("No holdings found.");
-        return holdings.map((holding) => (
-          '<div class="row holding">' +
-            '<div><strong>' + holding.symbol + '</strong><div class="subtle">' + titleCase(holding.assetType) + '</div></div>' +
-            '<div class="right">' + formatMoney(holding.marketValue) + '</div>' +
-            '<div class="right">' + formatPercent(holding.pnlPercent) + '</div>' +
-            '<div class="right"><span class="pill info">' + (holding.priceProvenance?.marketDataProvider || holding.priceProvenance?.source || "price") + '</span></div>' +
-          '</div>'
-        )).join("");
+      const append = (parent, ...children) => {
+        for (const child of children) parent.appendChild(child);
+        return parent;
       };
 
-      const renderAllocation = (allocation) => {
-        if (!allocation.length) return empty("No allocation data.");
-        return allocation.map((item) => (
-          '<div>' +
-            '<div class="bar-label"><span>' + titleCase(item.assetType) + '</span><span>' + formatPercent(item.percentage) + '</span></div>' +
-            '<div class="bar-track"><div class="bar-fill" style="width:' + Math.max(0, Math.min(100, item.percentage)) + '%"></div></div>' +
-          '</div>'
-        )).join("");
+      const empty = (text) => el("div", { className: "empty", text });
+
+      const clear = (id) => {
+        const node = byId(id);
+        node.replaceChildren();
+        return node;
       };
 
-      const renderReviews = (reviews) => {
-        if (!reviews.length) return empty("No conflicts.");
-        return reviews.map((review) => (
-          '<div class="action">' +
-            '<h3><span class="pill bad">' + review.status + '</span> ' + review.symbol + '</h3>' +
-            '<p>' + review.reason + '</p>' +
-          '</div>'
-        )).join("");
+      const renderActions = (id, actions) => {
+        const root = clear(id);
+        if (!actions.length) {
+          root.appendChild(empty("No action items."));
+          return;
+        }
+        for (const action of actions) {
+          const badge = el("span", {
+            className: "pill " + (action.priority === "high" ? "bad" : "warn"),
+            text: action.priority,
+          });
+          const title = el("h3");
+          append(title, badge, document.createTextNode(" " + (action.title || "")));
+          root.appendChild(append(el("article", { className: "action" }), title, el("p", { text: action.detail || "" })));
+        }
       };
 
-      const renderProviders = (checks) => checks.map((check) => (
-        '<div class="row">' +
-          '<div><strong>' + titleCase(check.name) + '</strong><div class="subtle">' + check.provider + '</div></div>' +
-          '<span class="pill ' + statusClass(check.status) + '">' + check.status + '</span>' +
-        '</div>'
-      )).join("");
+      const renderHoldings = (id, holdings) => {
+        const root = clear(id);
+        if (!holdings.length) {
+          root.appendChild(empty("No holdings found."));
+          return;
+        }
+        for (const holding of holdings) {
+          const identity = el("div");
+          append(
+            identity,
+            el("strong", { text: holding.symbol || "unknown" }),
+            el("div", { className: "subtle", text: titleCase(holding.assetType) }),
+          );
+          root.appendChild(
+            append(
+              el("div", { className: "row holding" }),
+              identity,
+              el("div", { className: "right", text: formatMoney(holding.marketValue) }),
+              el("div", { className: "right", text: formatPercent(holding.pnlPercent) }),
+              append(
+                el("div", { className: "right" }),
+                el("span", {
+                  className: "pill info",
+                  text: holding.priceProvenance?.marketDataProvider || holding.priceProvenance?.source || "price",
+                }),
+              ),
+            ),
+          );
+        }
+      };
+
+      const renderAllocation = (id, allocation) => {
+        const root = clear(id);
+        if (!allocation.length) {
+          root.appendChild(empty("No allocation data."));
+          return;
+        }
+        for (const item of allocation) {
+          const fill = el("div", { className: "bar-fill" });
+          fill.style.width = Math.max(0, Math.min(100, Number(item.percentage || 0))) + "%";
+          root.appendChild(
+            append(
+              el("div"),
+              append(
+                el("div", { className: "bar-label" }),
+                el("span", { text: titleCase(item.assetType) }),
+                el("span", { text: formatPercent(item.percentage) }),
+              ),
+              append(el("div", { className: "bar-track" }), fill),
+            ),
+          );
+        }
+      };
+
+      const renderReviews = (id, reviews) => {
+        const root = clear(id);
+        if (!reviews.length) {
+          root.appendChild(empty("No conflicts."));
+          return;
+        }
+        for (const review of reviews) {
+          const title = el("h3");
+          append(
+            title,
+            el("span", { className: "pill bad", text: review.status || "review" }),
+            document.createTextNode(" " + (review.symbol || "unknown")),
+          );
+          root.appendChild(append(el("div", { className: "action" }), title, el("p", { text: review.reason || "" })));
+        }
+      };
+
+      const renderProviders = (id, checks) => {
+        const root = clear(id);
+        for (const check of checks) {
+          const identity = el("div");
+          append(
+            identity,
+            el("strong", { text: titleCase(check.name) }),
+            el("div", { className: "subtle", text: check.provider || "unknown" }),
+          );
+          root.appendChild(
+            append(
+              el("div", { className: "row" }),
+              identity,
+              el("span", { className: "pill " + statusClass(check.status), text: check.status || "unknown" }),
+            ),
+          );
+        }
+      };
 
       async function loadDaily() {
         byId("error").hidden = true;
@@ -440,11 +516,11 @@ export const operatorPageHtml = `<!doctype html>
         setText("provider-detail", data.providerHealth.checks.length + " checks");
         setText("data-quality", data.portfolio.priceFallbacks + " / " + data.portfolio.partialResearch);
 
-        byId("actions").innerHTML = renderActions(data.actionItems || []);
-        byId("holdings").innerHTML = renderHoldings(data.holdings || []);
-        byId("allocation").innerHTML = renderAllocation(data.assetAllocation || []);
-        byId("conflicts").innerHTML = renderReviews(data.conflicts || []);
-        byId("providers").innerHTML = renderProviders(data.providerHealth.checks || []);
+        renderActions("actions", data.actionItems || []);
+        renderHoldings("holdings", data.holdings || []);
+        renderAllocation("allocation", data.assetAllocation || []);
+        renderReviews("conflicts", data.conflicts || []);
+        renderProviders("providers", data.providerHealth.checks || []);
       }
 
       async function refresh() {
