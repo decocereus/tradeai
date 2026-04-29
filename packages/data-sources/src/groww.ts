@@ -13,6 +13,8 @@ export const GROWW_API_KEY_ENV = "GROWW_API_KEY";
 export const GROWW_API_SECRET_ENV = "GROWW_API_SECRET";
 export const GROWW_API_BASE_URL = "https://api.groww.in/v1";
 export const GROWW_INSTRUMENTS_CSV_URL = "https://growwapi-assets.groww.in/instruments/instrument.csv";
+export const GROWW_TOKEN_REFRESH_HINT =
+  "Groww access tokens expire daily around 6 AM IST; prefer GROWW_API_KEY/GROWW_API_SECRET so TradeAI can mint a fresh token.";
 
 interface GrowwApiResponse<T> {
   status?: string;
@@ -65,7 +67,7 @@ export const resolveGrowwAccessToken = (accessToken?: string): string => {
   const resolvedToken = accessToken?.trim() || process.env[GROWW_ACCESS_TOKEN_ENV]?.trim();
   if (!resolvedToken) {
     throw new Error(
-      `Missing Groww access token. Set ${GROWW_ACCESS_TOKEN_ENV} or pass an access token explicitly.`,
+      `Missing Groww access token. Set ${GROWW_ACCESS_TOKEN_ENV} or pass an access token explicitly. ${GROWW_TOKEN_REFRESH_HINT}`,
     );
   }
   return resolvedToken;
@@ -102,7 +104,7 @@ export const fetchGrowwAccessToken = (
       const apiSecret = input.apiSecret?.trim() || process.env[GROWW_API_SECRET_ENV]?.trim();
       if (!apiKey || !apiSecret) {
         throw new Error(
-          `Missing Groww credentials. Set ${GROWW_ACCESS_TOKEN_ENV}, or set ${GROWW_API_KEY_ENV} and ${GROWW_API_SECRET_ENV}.`,
+          `Missing Groww credentials. Set ${GROWW_ACCESS_TOKEN_ENV}, or set ${GROWW_API_KEY_ENV} and ${GROWW_API_SECRET_ENV}. ${GROWW_TOKEN_REFRESH_HINT}`,
         );
       }
 
@@ -120,7 +122,7 @@ export const fetchGrowwAccessToken = (
         }),
       });
       if (!response.ok) {
-        throw new Error(`Groww token fetch failed with status ${response.status}`);
+        throw new Error(`Groww token fetch failed with status ${response.status}. ${GROWW_TOKEN_REFRESH_HINT}`);
       }
 
       const payload = (await response.json()) as GrowwTokenResponse;

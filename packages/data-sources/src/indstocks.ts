@@ -3,6 +3,8 @@ import { Effect } from "effect";
 
 export const INDSTOCKS_BASE_URL = "https://api.indstocks.com";
 export const INDSTOCKS_ACCESS_TOKEN_ENV = "INDSTOCKS_ACCESS_TOKEN";
+export const INDSTOCKS_TOKEN_REFRESH_HINT =
+  "INDstocks access tokens expire daily around 6 AM IST; refresh the token before running live broker workflows.";
 
 interface IndstocksHoldingsApiRecord {
   security_id?: string;
@@ -62,7 +64,7 @@ export const resolveIndstocksAccessToken = (accessToken?: string): string => {
   const resolvedToken = accessToken?.trim() || process.env[INDSTOCKS_ACCESS_TOKEN_ENV]?.trim();
   if (!resolvedToken) {
     throw new Error(
-      `Missing INDstocks access token. Set ${INDSTOCKS_ACCESS_TOKEN_ENV} or pass an access token explicitly.`,
+      `Missing INDstocks access token. Set ${INDSTOCKS_ACCESS_TOKEN_ENV} or pass an access token explicitly. ${INDSTOCKS_TOKEN_REFRESH_HINT}`,
     );
   }
   return resolvedToken;
@@ -75,7 +77,7 @@ export const createIndstocksHeaders = (accessToken?: string): HeadersInit => ({
 const buildIndstocksHttpError = (resource: string, response: Response) => {
   const authHint =
     response.status === 401
-      ? ` Check ${INDSTOCKS_ACCESS_TOKEN_ENV}; the configured token was rejected by INDstocks.`
+      ? ` Check ${INDSTOCKS_ACCESS_TOKEN_ENV}; the configured token was rejected by INDstocks. ${INDSTOCKS_TOKEN_REFRESH_HINT}`
       : "";
   return new Error(`INDstocks ${resource} fetch failed with status ${response.status}.${authHint}`);
 };

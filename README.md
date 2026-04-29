@@ -27,6 +27,7 @@ Local setup:
 - Set `TRADEAI_MARKET_DATA_PROVIDER=groww`
 - Set `GROWW_ACCESS_TOKEN` from your Groww Trading API subscription, or set `GROWW_API_KEY` and `GROWW_API_SECRET` so TradeAI can generate the daily access token
 - Optional: set `TRADEAI_RESEARCH_DATA_PROVIDER=aftermarkets` with `AFTERMARKETS_API_KEY`
+- Refresh INDstocks/Groww tokens after the daily 6 AM IST expiry; prefer Groww API key/secret so Groww token generation is automatic
 - Set `LOG_LEVEL` and `LOG_PRETTY` as desired
 - Start Postgres: `bun run db:start`
 - Push schema: `bun run db:push`

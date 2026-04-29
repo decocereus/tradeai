@@ -24,6 +24,13 @@ GROWW_API_KEY=...
 GROWW_API_SECRET=...
 ```
 
+Token caveat:
+
+- INDstocks and Groww access tokens expire daily around 6 AM IST.
+- Refresh `INDSTOCKS_ACCESS_TOKEN` before running live broker workflows each day.
+- Prefer `GROWW_API_KEY` plus `GROWW_API_SECRET` over a manually copied `GROWW_ACCESS_TOKEN`; TradeAI can use those credentials to generate a fresh Groww access token.
+- If live broker workflows fail with `401`, first assume the daily token rolled over and refresh the provider token.
+
 Optional:
 
 ```bash

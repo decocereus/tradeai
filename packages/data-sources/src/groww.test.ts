@@ -20,6 +20,7 @@ describe("data-sources / groww", () => {
     delete process.env.GROWW_ACCESS_TOKEN;
     try {
       expect(() => resolveGrowwAccessToken()).toThrow("Missing Groww access token");
+      expect(() => resolveGrowwAccessToken()).toThrow("expire daily around 6 AM IST");
     } finally {
       if (previous) process.env.GROWW_ACCESS_TOKEN = previous;
     }

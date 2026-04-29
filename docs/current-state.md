@@ -28,6 +28,8 @@ It uses Groww as the market-data provider for general NSE instruments and quote 
 - `TRADEAI_MARKET_DATA_PROVIDER=groww`
 - `GROWW_ACCESS_TOKEN`, or `GROWW_API_KEY` plus `GROWW_API_SECRET`
 
+INDstocks and Groww access tokens expire daily around 6 AM IST. Groww can be refreshed from API key/secret; INDstocks still requires a fresh broker token in `INDSTOCKS_ACCESS_TOKEN`.
+
 Important nuance:
 
 - the holdings payload returned by the real account did not match the fully documented shape

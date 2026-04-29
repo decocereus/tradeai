@@ -45,6 +45,9 @@ describe("data-sources / indstocks", () => {
     await expect(Effect.runPromise(fetchIndstocksHoldings("expired-token", fetchStub))).rejects.toThrow(
       "Check INDSTOCKS_ACCESS_TOKEN; the configured token was rejected by INDstocks.",
     );
+    await expect(Effect.runPromise(fetchIndstocksHoldings("expired-token", fetchStub))).rejects.toThrow(
+      "expire daily around 6 AM IST",
+    );
   });
 
   it("maps holdings records", () => {
