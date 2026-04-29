@@ -23,7 +23,9 @@ const inferResearchQuality = (packet: ResearchPacket): ResearchQuality => {
       ? "indstocks"
       : packet.source === "upstox_quote"
         ? "upstox"
-        : "demo";
+        : packet.source === "aftermarkets"
+          ? "aftermarkets"
+          : "demo";
 
   return {
     source,

@@ -25,6 +25,7 @@ Local setup:
 - Set `INDSTOCKS_ACCESS_TOKEN` from `https://indstocks.com/app/api-trading`
 - Optional: set `UPSTOX_ACCESS_TOKEN`
 - Optional: set `TRADEAI_MARKET_DATA_PROVIDER=truedata` with `TRUEDATA_USER_ID` and `TRUEDATA_PASSWORD`
+- Optional: set `TRADEAI_RESEARCH_DATA_PROVIDER=aftermarkets` with `AFTERMARKETS_API_KEY`
 - Set `LOG_LEVEL` and `LOG_PRETTY` as desired
 - Start Postgres: `bun run db:start`
 - Push schema: `bun run db:push`

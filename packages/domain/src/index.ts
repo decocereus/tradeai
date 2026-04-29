@@ -97,7 +97,13 @@ export const TechnicalAnalysisSnapshot = Schema.Struct({
 });
 export type TechnicalAnalysisSnapshot = Schema.Schema.Type<typeof TechnicalAnalysisSnapshot>;
 
-export const ResearchQualitySource = Schema.Literal("demo", "indstocks", "upstox", "public");
+export const ResearchQualitySource = Schema.Literal(
+  "demo",
+  "indstocks",
+  "upstox",
+  "aftermarkets",
+  "public",
+);
 export type ResearchQualitySource = Schema.Schema.Type<typeof ResearchQualitySource>;
 
 export const ResearchCompleteness = Schema.Literal("complete", "partial", "minimal");
@@ -129,7 +135,7 @@ export type ResearchQuality = Schema.Schema.Type<typeof ResearchQuality>;
 
 export const ResearchPacket = Schema.Struct({
   runLabel: Schema.String,
-  source: Schema.Literal("demo", "upstox_quote", "indstocks_quote"),
+  source: Schema.Literal("demo", "upstox_quote", "indstocks_quote", "aftermarkets"),
   sector: SectorSnapshot,
   instrument: InstrumentSnapshot,
   instrumentIsin: Schema.optional(Schema.String),

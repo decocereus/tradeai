@@ -62,6 +62,8 @@ const buildTuiRuntimeConfig = (): TradeAiRuntimeConfig => {
   const brokerAccessToken = readEnvValue("INDSTOCKS_ACCESS_TOKEN");
   const marketAccessToken = readEnvValue("UPSTOX_ACCESS_TOKEN");
   const marketDataProvider = readEnvValue("TRADEAI_MARKET_DATA_PROVIDER");
+  const researchDataProvider = readEnvValue("TRADEAI_RESEARCH_DATA_PROVIDER");
+  const aftermarketsApiKey = readEnvValue("AFTERMARKETS_API_KEY");
   const trueDataUserId = readEnvValue("TRUEDATA_USER_ID");
   const trueDataPassword = readEnvValue("TRUEDATA_PASSWORD");
   const databaseUrl = readEnvValue("DATABASE_URL");
@@ -76,6 +78,10 @@ const buildTuiRuntimeConfig = (): TradeAiRuntimeConfig => {
     ...(marketDataProvider === "truedata" || marketDataProvider === "upstox"
       ? { marketDataProvider }
       : {}),
+    ...(researchDataProvider === "aftermarkets" || researchDataProvider === "upstox"
+      ? { researchDataProvider }
+      : {}),
+    ...(aftermarketsApiKey ? { aftermarketsApiKey } : {}),
     ...(trueDataUserId ? { trueDataUserId } : {}),
     ...(trueDataPassword ? { trueDataPassword } : {}),
     ...(databaseUrl ? { databaseUrl } : {}),

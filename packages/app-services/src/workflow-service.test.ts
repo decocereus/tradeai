@@ -207,4 +207,32 @@ describe("app-services / workflow service", () => {
     expect(quotes[0]?.tradingSymbol).toBe("RELIANCE");
     expect(calls).toEqual(["quotes:RELIANCE"]);
   });
+
+  it("uses Aftermarkets research sources when configured", async () => {
+    const tradeAi = createTradeAiWorkflowService({
+      config: {
+        researchDataProvider: "aftermarkets",
+        aftermarketsApiKey: "am_live_test",
+      },
+      researchSources: {
+        buildEquityResearchPacket: (input) => {
+          expect(input.query).toBe("RELIANCE");
+          return Effect.succeed({
+            ...customResearchPacket,
+            source: "aftermarkets",
+            researchQuality: {
+              source: "aftermarkets",
+              completeness: "partial",
+              missingSignals: ["events", "memory"],
+              fallbacksUsed: ["neutral_score_defaults"],
+            },
+          });
+        },
+      },
+    });
+
+    const result = await Effect.runPromise(tradeAi.runEquityResearch({ query: "RELIANCE" }));
+
+    expect(result.researchQuality.source).toBe("aftermarkets");
+  });
 });

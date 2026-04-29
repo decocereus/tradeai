@@ -1,4 +1,5 @@
 import {
+  buildAftermarketsResearchPacket,
   buildEquityResearchPacket,
   buildIndstocksResearchPacketForPosition,
   buildPublicEquityResearchPacket,
@@ -49,6 +50,8 @@ export interface TradeAiRuntimeConfig {
   brokerAccessToken?: string;
   marketAccessToken?: string;
   marketDataProvider?: "upstox" | "truedata";
+  researchDataProvider?: "upstox" | "aftermarkets";
+  aftermarketsApiKey?: string;
   trueDataUserId?: string;
   trueDataPassword?: string;
   databaseUrl?: string;
@@ -225,6 +228,16 @@ export const defaultTradeAiRepositories: TradeAiRepositories = {
   loadPortfolioDashboardData: loadPreferredPortfolioDashboardRepositoryData,
 };
 
+const createAftermarketsResearchSources = (
+  config: TradeAiRuntimeConfig,
+): Partial<TradeAiResearchSources> => ({
+  buildEquityResearchPacket: (input) =>
+    buildAftermarketsResearchPacket({
+      query: input.query,
+      ...(config.aftermarketsApiKey ? { apiKey: config.aftermarketsApiKey } : {}),
+    }),
+});
+
 export const createTradeAiWorkflowDependencies = (
   options: CreateTradeAiWorkflowServiceOptions = {},
 ): TradeAiWorkflowDependencies => ({
@@ -242,6 +255,9 @@ export const createTradeAiWorkflowDependencies = (
   },
   researchSources: {
     ...defaultTradeAiResearchSources,
+    ...(options.config?.researchDataProvider === "aftermarkets"
+      ? createAftermarketsResearchSources(options.config)
+      : {}),
     ...options.researchSources,
   },
   memorySource: {
