@@ -76,6 +76,12 @@ describe("data-sources / groww", () => {
       closePrice: 1490,
       marketValue: 15000,
       pnlAbsolute: 1000,
+      priceProvenance: {
+        status: "market_enriched",
+        source: "market",
+        marketDataProvider: "groww",
+        quoteSymbol: "RELIANCE",
+      },
     });
   });
 
@@ -115,7 +121,7 @@ describe("data-sources / groww", () => {
     expect(holdings[0]?.pnlAbsolute).toBe(1000);
   });
 
-  it("keeps holdings usable when quote enrichment is unavailable", async () => {
+  it("does not manufacture holding valuations when quote enrichment is unavailable", async () => {
     const fetchStub = (async (input: RequestInfo | URL) => {
       if (String(input).includes("/live-data/quote")) {
         return new Response("unavailable", { status: 500 });
@@ -138,8 +144,7 @@ describe("data-sources / groww", () => {
     }) as unknown as typeof fetch;
 
     const holdings = await Effect.runPromise(fetchGrowwHoldings("token", fetchStub));
-    expect(holdings[0]?.broker).toBe("groww");
-    expect(holdings[0]?.lastTradedPrice).toBe(1400);
+    expect(holdings).toHaveLength(0);
   });
 
   it("does not drop valid quote enrichment when one holding quote fails", async () => {
@@ -184,7 +189,7 @@ describe("data-sources / groww", () => {
 
     const holdings = await Effect.runPromise(fetchGrowwHoldings("token", fetchStub));
     expect(holdings.find((holding) => holding.tradingSymbol === "RELIANCE")?.lastTradedPrice).toBe(1500);
-    expect(holdings.find((holding) => holding.tradingSymbol === "BAD")?.lastTradedPrice).toBe(100);
+    expect(holdings.find((holding) => holding.tradingSymbol === "BAD")).toBeUndefined();
   });
 
   it("maps quotes and quote snapshots", () => {

@@ -105,6 +105,23 @@ describe("data-sources / indstocks", () => {
     expect(holding?.tradingSymbol).toBe("NIFTYBEES");
     expect(holding?.lastTradedPrice).toBe(275.87);
     expect(holding?.exchangeSegment).toBe("NSE_EQ");
+    expect(holding?.priceProvenance).toMatchObject({
+      status: "market_enriched",
+      source: "market",
+      marketDataProvider: "indstocks",
+      quoteSymbol: "NSE_10576",
+    });
+  });
+
+  it("does not manufacture zero-value equity holdings without valuation inputs", () => {
+    const holding = mapIndstocksHolding({
+      security_id: "10576",
+      symbol: "NIFTYBEES",
+      isin: "INF204KB14I2",
+      total_qty: 11,
+    });
+
+    expect(holding).toBeNull();
   });
 
   it("maps trade-book records", () => {
@@ -225,7 +242,7 @@ describe("data-sources / indstocks", () => {
     expect(holdings[0]?.tradingSymbol).toBe("NIFTYBEES");
   });
 
-  it("keeps holdings usable when INDstocks quote enrichment fails", async () => {
+  it("surfaces INDstocks quote enrichment failures", async () => {
     const fetchStub = (async (input: RequestInfo | URL) => {
       if (String(input) === `${INDSTOCKS_BASE_URL}/portfolio/holdings`) {
         return new Response(
@@ -247,9 +264,9 @@ describe("data-sources / indstocks", () => {
       return new Response(JSON.stringify({ status: "error" }), { status: 400 });
     }) as unknown as typeof fetch;
 
-    const holdings = await Effect.runPromise(fetchIndstocksHoldings("secret", fetchStub));
-    expect(holdings).toHaveLength(1);
-    expect(holdings[0]?.lastTradedPrice).toBe(274.23);
+    await expect(Effect.runPromise(fetchIndstocksHoldings("secret", fetchStub))).rejects.toThrow(
+      "INDstocks market quote fetch failed with status 400",
+    );
   });
 
   it("fetches market quotes with injected fetch", async () => {

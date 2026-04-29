@@ -103,6 +103,70 @@ describe("app-services / workflow service", () => {
     ]);
   });
 
+  it("keeps broker research and trade-book credentials on the broker token", async () => {
+    const calls: string[] = [];
+    const holding: BrokerHolding = {
+      broker: "indstocks",
+      securityId: "500325",
+      tradingSymbol: "RELIANCE-EQ",
+      exchangeSegment: "NSE_EQ",
+      isin: "INE002A01018",
+      quantity: 5,
+      averagePrice: 2200,
+      lastTradedPrice: 2500,
+      closePrice: 2490,
+      marketValue: 12500,
+      pnlAbsolute: 1500,
+      pnlPercent: 13.64,
+    };
+    const tradeAi = createTradeAiWorkflowService({
+      config: {
+        brokerDataProvider: "indstocks",
+        brokerAccessToken: "indstocks-token",
+        growwAccessToken: "groww-token",
+      },
+      brokerSources: {
+        fetchBrokerHoldings: (accessToken) => {
+          calls.push(`holdings:${accessToken}`);
+          return Effect.succeed([holding]);
+        },
+        fetchBrokerTradeBook: (_segment, accessToken) => {
+          calls.push(`trade-book:${accessToken}`);
+          return Effect.succeed([]);
+        },
+      },
+      marketSources: {
+        fetchNseInstrumentProfiles: () => Effect.succeed([]),
+        fetchEquityQuotes: (_symbols, accessToken) => {
+          calls.push(`market:${accessToken}`);
+          return Effect.succeed([]);
+        },
+      },
+      researchSources: {
+        buildBrokerPositionResearchPacket: (input) => {
+          calls.push(`broker-research:${input.accessToken}`);
+          return Effect.succeed({
+            ...customResearchPacket,
+            instrumentIsin: "INE002A01018",
+          });
+        },
+      },
+      repositories: {
+        hasConfiguredDatabaseUrl: () => false,
+      },
+    });
+
+    await Effect.runPromise(tradeAi.getBrokerTradeBook());
+    await Effect.runPromise(tradeAi.reviewBrokerHoldingsAgainstResearch());
+
+    expect(calls).toEqual([
+      "trade-book:indstocks-token",
+      "holdings:indstocks-token",
+      "market:groww-token",
+      "broker-research:indstocks-token",
+    ]);
+  });
+
   it("uses injected market and research sources through the service port", async () => {
     const memoryContext: MemoryContext = {
       previousVerdict: "watch",

@@ -6,7 +6,9 @@ import {
   buildBrokerPortfolioReviewReport,
   buildHoldingResearchReview,
   reviewImportedPortfolioAgainstResearch,
+  reviewSyncedBrokerPortfolioWithDependencies,
 } from "./review-workflows.ts";
+import { createTradeAiWorkflowDependencies } from "./ports.ts";
 import {
   summarizeHoldingsReview,
   summarizePortfolioDecisionReport,
@@ -15,7 +17,20 @@ import { buildMockResearchResult } from "./test-fixtures.ts";
 
 describe("app-services / review workflows", () => {
   it("builds a holdings review item and aggregate report", () => {
-    const review = buildHoldingResearchReview("RELIANCE-EQ", "RELIANCE", {
+    const position = {
+      symbol: "RELIANCE-EQ",
+      isin: "INE002A01018",
+      exchangeSegment: "NSE_EQ",
+      quantity: 50,
+      averagePrice: 2200,
+      lastTradedPrice: 2505.1,
+      closePrice: 2495,
+      marketValue: 125255,
+      pnlAbsolute: 15255,
+      pnlPercent: 13.87,
+      sourceBroker: "indstocks" as const,
+    };
+    const review = buildHoldingResearchReview(position, "RELIANCE", {
       research: {
         runLabel: "live-run",
         sector: {
@@ -55,6 +70,7 @@ describe("app-services / review workflows", () => {
           mainRisks: [],
           invalidationConditions: [],
         },
+        instrumentIsin: "INE002A01018",
         researchQuality: {
           source: "market",
           completeness: "complete",
@@ -77,6 +93,68 @@ describe("app-services / review workflows", () => {
     expect(report.alignedCount).toBe(1);
     expect(report.errorCount).toBe(1);
     expect(summarizeHoldingsReview(report)).toContain("reviewed=2");
+  });
+
+  it("reviews the exact synced Groww snapshot without refetching holdings", async () => {
+    let holdingsFetches = 0;
+    const research = await buildMockResearchResult({
+      symbol: "RELIANCE",
+      isin: "INE002A01018",
+      verdict: "buy",
+    });
+    const dependencies = createTradeAiWorkflowDependencies({
+      config: { brokerDataProvider: "groww", persistPortfolioSnapshots: false },
+      brokerSources: {
+        fetchBrokerHoldings: () => {
+          holdingsFetches += 1;
+          return Effect.succeed([
+            {
+              broker: "groww" as const,
+              securityId: "INE002A01018",
+              tradingSymbol: "RELIANCE",
+              exchangeSegment: "NSE_EQ",
+              isin: "INE002A01018",
+              quantity: 5,
+              averagePrice: 2400,
+              lastTradedPrice: 2500,
+              closePrice: 2490,
+              marketValue: 12500,
+              pnlAbsolute: 500,
+              pnlPercent: 4.17,
+            },
+          ]);
+        },
+        fetchBrokerTradeBook: () => Effect.succeed([]),
+      },
+      marketSources: {
+        fetchNseInstrumentProfiles: () => Effect.succeed([]),
+        fetchEquityQuotes: () => Effect.succeed([]),
+      },
+      repositories: {
+        hasConfiguredDatabaseUrl: () => false,
+      },
+    });
+
+    const report = await Effect.runPromise(
+      reviewSyncedBrokerPortfolioWithDependencies(
+        {
+          options: {
+            researchRunners: {
+              runBrokerPositionResearch: () => Effect.fail(new Error("unexpected broker research")),
+              runAuthenticatedEquityResearch: () => Effect.succeed(research),
+              runPublicEquityResearch: () => Effect.fail(new Error("unexpected public research")),
+            },
+          },
+        },
+        dependencies,
+      ),
+    );
+
+    expect(holdingsFetches).toBe(1);
+    expect(report.sync.broker).toBe("groww");
+    expect(report.review.broker).toBe("groww");
+    expect(report.sync.currentSnapshotId.startsWith("groww:")).toBe(true);
+    expect(report.review.alignedCount).toBe(1);
   });
 
   it("builds a combined broker portfolio decision report", () => {

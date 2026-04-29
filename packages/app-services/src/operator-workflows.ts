@@ -1,4 +1,5 @@
 import type {
+  BrokerSource,
   DailyOperatorReport,
   HoldingResearchReview,
   PortfolioAssetAllocation,
@@ -23,6 +24,11 @@ export interface ProviderHealthInput {
 
 export interface DailyOperatorInput extends BrokerPortfolioReviewInput {
   health?: ProviderHealthInput;
+}
+
+export interface DailyOperatorReadModelInput {
+  broker?: BrokerSource;
+  databaseUrl?: string;
 }
 
 export interface DailyOperatorViewModel {
@@ -219,6 +225,86 @@ export const getDailyOperatorReport = (
       actionItems,
     };
   });
+
+export const getDailyOperatorReadOnlyReport = (
+  input: DailyOperatorReadModelInput,
+  dependencies: TradeAiWorkflowDependencies,
+): Effect.Effect<DailyOperatorReport, Error> =>
+  Effect.gen(function* () {
+    const generatedAt = nowIso();
+    const checkedAt = nowIso();
+    const brokerProvider = dependencies.config.brokerDataProvider ?? "indstocks";
+    const marketProvider = dependencies.config.marketDataProvider ?? "groww";
+    const researchProvider = dependencies.config.researchDataProvider ?? "aftermarkets";
+    const dbConfigured = dependencies.repositories.hasConfiguredDatabaseUrl(input.databaseUrl);
+    const database: ProviderHealthCheck = dbConfigured
+      ? {
+          name: "database",
+          provider: "postgres",
+          status: "ok",
+          checkedAt,
+          message: "DATABASE_URL is configured",
+        }
+      : {
+          name: "database",
+          provider: "postgres",
+          status: "degraded",
+          checkedAt,
+          message: "DATABASE_URL is not configured; read-only dashboard output is unavailable",
+          action: "Set DATABASE_URL to enable persisted snapshots, review history, and dashboard output.",
+        };
+    const checks: ProviderHealthCheck[] = [
+      {
+        name: "broker",
+        provider: brokerProvider,
+        status: "skipped",
+        checkedAt,
+        message: "Skipped for read-only operator view; no live broker sync was run.",
+      },
+      {
+        name: "market",
+        provider: marketProvider,
+        status: "skipped",
+        checkedAt,
+        message: "Skipped for read-only operator view; persisted dashboard data was used.",
+      },
+      {
+        name: "mutual_fund_nav",
+        provider: "amfi",
+        status: "skipped",
+        checkedAt,
+        message: "Skipped for read-only operator view.",
+      },
+      {
+        name: "research",
+        provider: researchProvider,
+        status: "skipped",
+        checkedAt,
+        message: "Skipped for read-only operator view; no research workflow was run.",
+      },
+      database,
+    ];
+    const health: ProviderHealthReport = {
+      checkedAt,
+      status: dbConfigured ? "skipped" : "degraded",
+      checks,
+    };
+    const dashboard = dbConfigured
+      ? yield* getPortfolioDashboard(input.broker, input.databaseUrl, dependencies)
+      : undefined;
+
+    return {
+      generatedAt,
+      health,
+      ...(dashboard ? { dashboard } : {}),
+      actionItems: healthActionItems(health),
+    };
+  });
+
+export const getDailyOperatorReadOnlyViewModel = (
+  input: DailyOperatorReadModelInput,
+  dependencies: TradeAiWorkflowDependencies,
+) => getDailyOperatorReadOnlyReport(input, dependencies).pipe(Effect.map(buildDailyOperatorViewModel));
 
 export const buildDailyOperatorViewModel = (
   report: DailyOperatorReport,

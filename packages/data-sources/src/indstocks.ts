@@ -104,6 +104,9 @@ const resolveHoldingAveragePrice = (record: IndstocksHoldingsApiRecord): number 
 const resolveHoldingExchangeSegment = (record: IndstocksHoldingsApiRecord): string =>
   record.exchange_segment || "NSE_EQ";
 
+const hasBrokerPrice = (record: IndstocksHoldingsApiRecord): boolean =>
+  typeof record.last_traded_price === "number" || typeof record.close_price === "number";
+
 export const mapIndstocksHolding = (
   record: IndstocksHoldingsApiRecord,
   quotesByScripCode: Record<string, IndstocksMarketQuoteEntry> = {},
@@ -112,22 +115,30 @@ export const mapIndstocksHolding = (
   const tradingSymbol = record.trading_symbol || record.symbol || record.isin;
   const exchangeSegment = resolveHoldingExchangeSegment(record);
   const quantity = resolveHoldingQuantity(record);
-  const averagePrice = resolveHoldingAveragePrice(record) ?? 0;
+  const averagePrice = resolveHoldingAveragePrice(record);
   const quote = securityId ? quotesByScripCode[buildIndstocksScripCode(securityId, exchangeSegment)] : undefined;
+  const isMutualFund = !record.security_id;
   const lastTradedPrice =
     typeof record.last_traded_price === "number"
       ? record.last_traded_price
-      : quote?.live_price ?? averagePrice;
+      : typeof quote?.live_price === "number"
+        ? quote.live_price
+        : isMutualFund
+          ? 0
+          : undefined;
   const closePrice =
     typeof record.close_price === "number"
       ? record.close_price
-      : quote?.prev_close ?? lastTradedPrice ?? averagePrice;
+      : typeof quote?.prev_close === "number"
+        ? quote.prev_close
+        : lastTradedPrice;
 
   if (
     !securityId ||
     !tradingSymbol ||
     !record.isin ||
     typeof quantity !== "number" ||
+    typeof averagePrice !== "number" ||
     typeof lastTradedPrice !== "number" ||
     typeof closePrice !== "number"
   ) {
@@ -146,13 +157,33 @@ export const mapIndstocksHolding = (
       : averagePrice > 0
         ? ((lastTradedPrice - averagePrice) / averagePrice) * 100
         : 0;
+  const priceProvenance =
+    isMutualFund && !hasBrokerPrice(record) && !quote
+      ? {
+          status: "market_missing" as const,
+          source: "fallback" as const,
+          marketDataProvider: "amfi" as const,
+          quoteSymbol: record.isin,
+          message: "NAV enrichment required before valuation is available.",
+        }
+      : quote && !hasBrokerPrice(record)
+        ? {
+            status: "market_enriched" as const,
+            source: "market" as const,
+            marketDataProvider: "indstocks" as const,
+            quoteSymbol: buildIndstocksScripCode(securityId, exchangeSegment),
+          }
+        : {
+            status: "broker" as const,
+            source: "broker" as const,
+          };
 
   return {
     broker: "indstocks",
-    ...(record.security_id ? {} : { assetType: "mutual_fund" as const }),
+    ...(isMutualFund ? { assetType: "mutual_fund" as const } : {}),
     securityId,
     tradingSymbol,
-    exchangeSegment: record.security_id ? exchangeSegment : "MF",
+    exchangeSegment: isMutualFund ? "MF" : exchangeSegment,
     isin: record.isin,
     quantity,
     averagePrice,
@@ -161,6 +192,7 @@ export const mapIndstocksHolding = (
     marketValue,
     pnlAbsolute,
     pnlPercent,
+    priceProvenance,
   };
 };
 
@@ -308,11 +340,7 @@ export const fetchIndstocksHoldings = (
         .filter((entry): entry is string => Boolean(entry));
       let quotesByScripCode: Record<string, IndstocksMarketQuoteEntry> = {};
       if (scripCodes.length > 0) {
-        try {
-          quotesByScripCode = await Effect.runPromise(fetchIndstocksMarketQuotes(scripCodes, accessToken, fetchImpl));
-        } catch {
-          quotesByScripCode = {};
-        }
+        quotesByScripCode = await Effect.runPromise(fetchIndstocksMarketQuotes(scripCodes, accessToken, fetchImpl));
       }
 
       return parseIndstocksHoldingsResponse(payload, quotesByScripCode);

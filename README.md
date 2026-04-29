@@ -16,9 +16,8 @@ Current scaffold commands:
 - `bun run dev:tui -- --daily --json`
 - `bun run dev:tui -- --daily --json --raw`
 - `bun run dev:api`
-- `open http://localhost:3000/operator`
-- `curl http://localhost:3000/operator/daily`
-- `curl http://localhost:3000/operator/health`
+- `curl -H "Authorization: Bearer $TRADEAI_API_TOKEN" http://localhost:3000/operator/daily`
+- `curl -H "Authorization: Bearer $TRADEAI_API_TOKEN" http://localhost:3000/operator/health`
 - `bun run dev:tui -- --dashboard`
 - `bun run dev:tui -- --manual-decision --import-holdings /path/to/holdings.csv --import-trades /path/to/trades.csv`
 - `bun run dev:tui -- --holding-history RELIANCE-EQ --holding-history-broker manual_csv`
@@ -30,6 +29,7 @@ Current scaffold commands:
 Local setup:
 
 - Copy `.env.example` to `.env`
+- Set `TRADEAI_API_TOKEN` before running `bun run dev:api`; every operator, portfolio, market, and research route except `/health` requires it.
 - Set `INDSTOCKS_ACCESS_TOKEN` for the primary broker/portfolio account
 - Set `TRADEAI_BROKER_DATA_PROVIDER=indstocks`
 - Set `TRADEAI_MARKET_DATA_PROVIDER=groww`

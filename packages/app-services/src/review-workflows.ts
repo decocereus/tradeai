@@ -24,7 +24,7 @@ import {
   getManualPortfolioPositions,
   importManualPortfolioSnapshot,
   type ManualPortfolioImportInput,
-  syncBrokerPortfolio,
+  syncBrokerPortfolioSnapshot,
 } from "./portfolio-workflows.ts";
 import {
   type EquityResearchInput,
@@ -137,7 +137,7 @@ const buildReviewReason = (
 ) => `${baseReason} Evidence: ${formatResearchEvidence(research)}.${formatResearchDrivers(research)}`;
 
 export const buildHoldingResearchReview = (
-  symbol: string,
+  position: PortfolioPositionSnapshot,
   query: string,
   outcome:
     | { research: DailyResearchResult }
@@ -145,7 +145,7 @@ export const buildHoldingResearchReview = (
 ): HoldingResearchReview => {
   if ("error" in outcome) {
     return {
-      symbol,
+      symbol: position.symbol,
       query,
       status: "error",
       reason: outcome.error,
@@ -153,24 +153,12 @@ export const buildHoldingResearchReview = (
   }
 
   const assessment = assessPositionAgainstResearch(
-    {
-      symbol,
-      isin: "",
-      exchangeSegment: "NSE_EQ",
-      quantity: 0,
-      averagePrice: 0,
-      lastTradedPrice: 0,
-      closePrice: 0,
-      marketValue: 0,
-      pnlAbsolute: 0,
-      pnlPercent: 0,
-      sourceBroker: "indstocks",
-    },
+    position,
     outcome.research,
   );
 
   return {
-    symbol,
+    symbol: position.symbol,
     query,
     status: assessment.status,
     reason: buildReviewReason(assessment.reason, outcome.research),
@@ -197,6 +185,11 @@ export const buildBrokerPortfolioReviewReport = (
     reviews: [...reviews],
   };
 };
+
+const resolvePortfolioReviewBroker = (
+  positions: readonly PortfolioPositionSnapshot[],
+  dependencies: TradeAiWorkflowDependencies,
+): BrokerSource => positions[0]?.sourceBroker ?? dependencies.config.brokerDataProvider ?? "indstocks";
 
 export const reviewPortfolioPositionsAgainstResearch = (input: ReviewPortfolioPositionsInput) =>
   Effect.gen(function* () {
@@ -233,7 +226,7 @@ export const reviewPortfolioPositionsAgainstResearch = (input: ReviewPortfolioPo
             );
 
             if (indstocksOutcome._tag === "Right") {
-              return buildHoldingResearchReview(position.symbol, position.symbol, {
+              return buildHoldingResearchReview(position, position.symbol, {
                 research: indstocksOutcome.right,
               });
             }
@@ -262,7 +255,7 @@ export const reviewPortfolioPositionsAgainstResearch = (input: ReviewPortfolioPo
             if (!allowPublicResearchFallback) {
               const error =
                 outcome.left instanceof Error ? outcome.left.message : String(outcome.left);
-              return buildHoldingResearchReview(position.symbol, query, { error });
+              return buildHoldingResearchReview(position, query, { error });
             }
 
             const fallback = yield* Effect.either(
@@ -271,10 +264,10 @@ export const reviewPortfolioPositionsAgainstResearch = (input: ReviewPortfolioPo
             if (fallback._tag === "Left") {
               const error =
                 outcome.left instanceof Error ? outcome.left.message : String(outcome.left);
-              return buildHoldingResearchReview(position.symbol, query, { error });
+              return buildHoldingResearchReview(position, query, { error });
             }
 
-            const review = buildHoldingResearchReview(position.symbol, query, {
+            const review = buildHoldingResearchReview(position, query, {
               research: fallback.right,
             });
 
@@ -284,7 +277,7 @@ export const reviewPortfolioPositionsAgainstResearch = (input: ReviewPortfolioPo
             };
           }
 
-          return buildHoldingResearchReview(position.symbol, query, {
+          return buildHoldingResearchReview(position, query, {
             research: outcome.right,
           });
         }),
@@ -306,7 +299,7 @@ export const reviewBrokerHoldingsAgainstResearchWithDependencies = (
     const positions = yield* getBrokerPortfolioPositions(input, dependencies);
     return yield* reviewPortfolioPositionsAgainstResearch({
       positions,
-      broker: "indstocks",
+      broker: resolvePortfolioReviewBroker(positions, dependencies),
       ...(input.accessToken ? { accessToken: input.accessToken } : {}),
       ...(input.options ? { options: input.options } : {}),
     });
@@ -331,8 +324,13 @@ export const reviewSyncedBrokerPortfolioWithDependencies = (
 ) =>
   Effect.gen(function* () {
     log.info({ action: "reviewSyncedBrokerPortfolio" }, "building combined portfolio decision report");
-    const sync = yield* syncBrokerPortfolio(input, dependencies);
-    const review = yield* reviewBrokerHoldingsAgainstResearchWithDependencies(input, dependencies);
+    const { snapshot, report: sync } = yield* syncBrokerPortfolioSnapshot(input, dependencies);
+    const review = yield* reviewPortfolioPositionsAgainstResearch({
+      positions: snapshot.positions,
+      broker: snapshot.broker,
+      ...(input.accessToken ? { accessToken: input.accessToken } : {}),
+      ...(input.options ? { options: input.options } : {}),
+    });
     const reviewsPersisted =
       sync.persisted && canPersistPortfolioMemory(input.databaseUrl, dependencies)
         ? (
@@ -413,28 +411,26 @@ export const getHoldingReviewTrend = (
       return summarizeHoldingReviewTrend(symbol, history);
     }
 
-    const [manualHistory, brokerHistory] = yield* Effect.all([
+    const [manualHistory, indstocksHistory, growwHistory] = yield* Effect.all([
       Effect.tryPromise(() =>
         dependencies.repositories.loadHoldingReviewHistory(symbol, "manual_csv", databaseUrl),
       ),
       Effect.tryPromise(() =>
         dependencies.repositories.loadHoldingReviewHistory(symbol, "indstocks", databaseUrl),
       ),
+      Effect.tryPromise(() =>
+        dependencies.repositories.loadHoldingReviewHistory(symbol, "groww", databaseUrl),
+      ),
     ]);
 
-    const manualTrend = summarizeHoldingReviewTrend(symbol, manualHistory);
-    const brokerTrend = summarizeHoldingReviewTrend(symbol, brokerHistory);
-
-    if (!manualTrend) {
-      return brokerTrend;
-    }
-
-    if (!brokerTrend) {
-      return manualTrend;
-    }
-
-    return new Date(manualTrend.latestReviewedAt).getTime() >=
-      new Date(brokerTrend.latestReviewedAt).getTime()
-      ? manualTrend
-      : brokerTrend;
+    return [manualHistory, indstocksHistory, growwHistory]
+      .map((history) => summarizeHoldingReviewTrend(symbol, history))
+      .filter((trend): trend is NonNullable<ReturnType<typeof summarizeHoldingReviewTrend>> =>
+        Boolean(trend),
+      )
+      .sort(
+        (left, right) =>
+          new Date(right.latestReviewedAt).getTime() -
+          new Date(left.latestReviewedAt).getTime(),
+      )[0];
   });

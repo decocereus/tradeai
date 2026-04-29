@@ -6,7 +6,7 @@ export type AssetType = Schema.Schema.Type<typeof AssetType>;
 export const BrokerSource = Schema.Literal("groww", "indstocks", "manual_csv");
 export type BrokerSource = Schema.Schema.Type<typeof BrokerSource>;
 
-export const MarketDataProvider = Schema.Literal("groww", "amfi", "mixed");
+export const MarketDataProvider = Schema.Literal("groww", "indstocks", "amfi", "mixed");
 export type MarketDataProvider = Schema.Schema.Type<typeof MarketDataProvider>;
 
 export const RiskBucket = Schema.Literal("stable", "moderate", "growth", "speculative");

@@ -200,10 +200,7 @@ bun run dev:tui -- --amfi "parag parikh"
 bun run dev:api
 ```
 
-Operator screen:
-
-- `GET /operator`
-- `GET /`
+Set `TRADEAI_API_TOKEN` before starting the API server. `/health` is public; every operator, portfolio, market, and research route requires `Authorization: Bearer $TRADEAI_API_TOKEN`, HTTP Basic auth with the token as the password, or `X-TradeAI-Api-Token`.
 
 Initial read-only endpoints:
 
@@ -211,12 +208,13 @@ Initial read-only endpoints:
 - `GET /operator/health`
 - `GET /operator/daily`
 - `GET /operator/daily?raw=true`
+- `GET /portfolio/dashboard?broker=groww`
 - `GET /portfolio/dashboard?broker=indstocks`
 - `GET /market/equities/search?q=RELIANCE`
 - `GET /market/quotes?instrumentKey=NSE_EQ|INE002A01018`
 - `GET /research/equity?q=RELIANCE`
 
-`/operator/health` and `/operator/daily` use the same `tradeai.cli.v1` envelope as CLI JSON output. `/operator/daily` returns the UI-ready daily view model by default; `raw=true` returns the internal workflow report.
+`/operator/health` and `/operator/daily` use the same `tradeai.cli.v1` envelope as CLI JSON output. `/operator/daily` is read-only: it returns the latest persisted dashboard view model by default and does not run live broker sync, research, or persistence. `raw=true` returns the read-only report behind that view model.
 
 ### Pi session path
 

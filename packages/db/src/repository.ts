@@ -7,7 +7,7 @@ import type {
   PortfolioPositionSnapshot,
   PortfolioSnapshotReference,
 } from "@tradeai/domain";
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, max } from "drizzle-orm";
 
 import { createDatabaseConnection } from "./client.ts";
 import { brokerTradeFills, holdingReviews, portfolioPositions } from "./index.ts";
@@ -36,6 +36,12 @@ interface HoldingReviewRowLike {
   broker: string;
   payload: HoldingReviewHistoryEntry;
   createdAt: Date;
+}
+
+interface PortfolioSnapshotHeaderRowLike {
+  snapshotId: string;
+  broker: string;
+  capturedAt: Date | string | null;
 }
 
 export interface PortfolioDashboardRepositoryData {
@@ -98,6 +104,56 @@ export const materializePortfolioMemorySnapshot = (
       ...(sortedByPnl.at(-1) ? { topLoserSymbol: sortedByPnl.at(-1)?.symbol } : {}),
     },
   };
+};
+
+export const resolvePreferredPortfolioDashboardBroker = (
+  headers: readonly PortfolioSnapshotReference[],
+  preferredBroker?: BrokerSource,
+): BrokerSource => {
+  if (preferredBroker && headers.some((header) => header.broker === preferredBroker)) {
+    return preferredBroker;
+  }
+
+  return headers[0]?.broker ?? preferredBroker ?? "manual_csv";
+};
+
+const materializePortfolioSnapshotHeaderRows = (
+  rows: readonly PortfolioSnapshotHeaderRowLike[],
+): PortfolioSnapshotReference[] =>
+  rows
+    .filter((row): row is PortfolioSnapshotHeaderRowLike & { capturedAt: Date | string } =>
+      row.capturedAt !== null,
+    )
+    .map((row) => ({
+      snapshotId: row.snapshotId,
+      broker: row.broker as BrokerSource,
+      capturedAt:
+        row.capturedAt instanceof Date
+          ? row.capturedAt.toISOString()
+          : new Date(row.capturedAt).toISOString(),
+    }));
+
+const selectRecentPortfolioSnapshotHeaders = (
+  db: DashboardQueryDbLike,
+  broker: BrokerSource | undefined,
+  limit: number,
+) => {
+  const capturedAt = max(portfolioPositions.createdAt);
+  const query = db
+    .select({
+      snapshotId: portfolioPositions.snapshotId,
+      broker: portfolioPositions.broker,
+      capturedAt,
+    })
+    .from(portfolioPositions)
+    .$dynamic();
+
+  const filteredQuery = broker ? query.where(eq(portfolioPositions.broker, broker)) : query;
+
+  return filteredQuery
+    .groupBy(portfolioPositions.snapshotId, portfolioPositions.broker)
+    .orderBy(desc(capturedAt))
+    .limit(limit);
 };
 
 const groupPortfolioRowsBySnapshotId = (
@@ -210,19 +266,8 @@ export const loadRecentPortfolioSnapshotHeaders = async (
   const { db, pool } = createDatabaseConnection(databaseUrl);
 
   try {
-    const rows = await db
-      .select({
-        snapshotId: portfolioPositions.snapshotId,
-        broker: portfolioPositions.broker,
-        payload: portfolioPositions.payload,
-        createdAt: portfolioPositions.createdAt,
-      })
-      .from(portfolioPositions)
-      .where(eq(portfolioPositions.broker, broker))
-      .orderBy(desc(portfolioPositions.createdAt))
-      .limit(limit * 20);
-
-    return extractPortfolioSnapshotHeaders(rows as PortfolioPositionRowLike[]).slice(0, limit);
+    const rows = await selectRecentPortfolioSnapshotHeaders(db, broker, limit);
+    return materializePortfolioSnapshotHeaderRows(rows as PortfolioSnapshotHeaderRowLike[]);
   } finally {
     await pool.end();
   }
@@ -388,21 +433,14 @@ const queryPortfolioDashboardRepositoryData = async (
   snapshotLimit = 5,
   historyLimitPerSymbol = 10,
 ): Promise<PortfolioDashboardRepositoryData> => {
-    const snapshotHeaderRows = await db
-      .select({
-        snapshotId: portfolioPositions.snapshotId,
-        broker: portfolioPositions.broker,
-        payload: portfolioPositions.payload,
-        createdAt: portfolioPositions.createdAt,
-      })
-      .from(portfolioPositions)
-      .where(eq(portfolioPositions.broker, broker))
-      .orderBy(desc(portfolioPositions.createdAt))
-      .limit(snapshotLimit * 20);
-
-    const recentSnapshots = extractPortfolioSnapshotHeaders(
-      snapshotHeaderRows as PortfolioPositionRowLike[],
-    ).slice(0, snapshotLimit);
+    const snapshotHeaderRows = await selectRecentPortfolioSnapshotHeaders(
+      db,
+      broker,
+      snapshotLimit,
+    );
+    const recentSnapshots = materializePortfolioSnapshotHeaderRows(
+      snapshotHeaderRows as PortfolioSnapshotHeaderRowLike[],
+    );
 
     if (recentSnapshots.length === 0) {
       return {
@@ -526,36 +564,18 @@ export const loadPreferredPortfolioDashboardRepositoryData = async (
   const { db, pool } = createDatabaseConnection(databaseUrl);
 
   try {
-    const brokerHeaderRows = await db
-      .select({
-        snapshotId: portfolioPositions.snapshotId,
-        broker: portfolioPositions.broker,
-        payload: portfolioPositions.payload,
-        createdAt: portfolioPositions.createdAt,
-      })
-      .from(portfolioPositions)
-      .orderBy(desc(portfolioPositions.createdAt))
-      .limit(80);
-
-    const allHeaders = extractPortfolioSnapshotHeaders(
-      brokerHeaderRows as PortfolioPositionRowLike[],
+    const brokerHeaderRows = await selectRecentPortfolioSnapshotHeaders(
+      db,
+      undefined,
+      snapshotLimit * 3,
     );
-    const manualLatest = allHeaders.find((header) => header.broker === "manual_csv");
-    const brokerLatest = allHeaders.find((header) => header.broker === "indstocks");
-
-    const resolvedBroker: BrokerSource =
-      preferredBroker && allHeaders.some((header) => header.broker === preferredBroker)
-        ? preferredBroker
-        : !manualLatest && !brokerLatest
-          ? preferredBroker ?? "manual_csv"
-          : !manualLatest
-            ? "indstocks"
-            : !brokerLatest
-              ? "manual_csv"
-              : new Date(manualLatest.capturedAt).getTime() >=
-                  new Date(brokerLatest.capturedAt).getTime()
-                ? "manual_csv"
-                : "indstocks";
+    const allHeaders = materializePortfolioSnapshotHeaderRows(
+      brokerHeaderRows as PortfolioSnapshotHeaderRowLike[],
+    );
+    const resolvedBroker = resolvePreferredPortfolioDashboardBroker(
+      allHeaders,
+      preferredBroker,
+    );
 
     return await queryPortfolioDashboardRepositoryData(
       db,

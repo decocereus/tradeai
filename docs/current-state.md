@@ -93,7 +93,7 @@ The TUI has three practical modes:
    Running `bun run dev:tui -- --daily --json`, `--provider-health --json`, or `--dashboard --json` returns a parseable `tradeai.cli.v1` envelope for a future UI. Daily JSON now returns a UI-ready view model by default; use `--daily --json --raw` for the internal workflow report.
 
 4. API transport mode
-   Running `bun run dev:api` exposes `/operator` as the first browser UI plus `/operator/daily` and `/operator/health` over HTTP using the same operator contract envelope.
+   Running `bun run dev:api` exposes `/operator/daily` and `/operator/health` over HTTP using the same operator contract envelope. Set `TRADEAI_API_TOKEN`; `/health` is the only unauthenticated route. `GET /operator/daily` is read-only and renders the latest persisted dashboard state; use the TUI daily command when you intend to sync/review and persist live portfolio data.
 
 5. Explicit command mode
    Running explicit flags still exposes the detailed operator flows.

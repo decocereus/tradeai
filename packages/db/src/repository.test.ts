@@ -6,6 +6,7 @@ import { buildPortfolioMemorySnapshot } from "@tradeai/memory";
 import {
   extractPortfolioSnapshotHeaders,
   materializePortfolioMemorySnapshot,
+  resolvePreferredPortfolioDashboardBroker,
 } from "./repository.ts";
 
 describe("db / repository helpers", () => {
@@ -63,5 +64,23 @@ describe("db / repository helpers", () => {
 
     expect(snapshot?.positions).toHaveLength(1);
     expect(snapshot?.summary.holdingsCount).toBe(1);
+  });
+
+  it("selects Groww as a preferred or latest dashboard broker", () => {
+    const headers = [
+      {
+        snapshotId: "groww:2026-04-18T12:00:00.000Z",
+        broker: "groww" as const,
+        capturedAt: "2026-04-18T12:00:00.000Z",
+      },
+      {
+        snapshotId: "indstocks:2026-04-17T12:00:00.000Z",
+        broker: "indstocks" as const,
+        capturedAt: "2026-04-17T12:00:00.000Z",
+      },
+    ];
+
+    expect(resolvePreferredPortfolioDashboardBroker(headers)).toBe("groww");
+    expect(resolvePreferredPortfolioDashboardBroker(headers, "indstocks")).toBe("indstocks");
   });
 });

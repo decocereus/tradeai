@@ -39,8 +39,11 @@ import {
 import { getPortfolioDashboard } from "./dashboard-workflows.ts";
 import {
   buildDailyOperatorViewModel,
+  getDailyOperatorReadOnlyReport,
+  getDailyOperatorReadOnlyViewModel,
   getDailyOperatorReport,
   getProviderHealth,
+  type DailyOperatorReadModelInput,
   type DailyOperatorInput,
   type ProviderHealthInput,
 } from "./operator-workflows.ts";
@@ -67,54 +70,71 @@ export interface HoldingReviewTrendInput {
   databaseUrl?: string;
 }
 
+const resolveBrokerAccessToken = (config: TradeAiRuntimeConfig): string | undefined => {
+  if (config.brokerDataProvider === "groww") {
+    return config.growwAccessToken ?? config.brokerAccessToken ?? config.accessToken;
+  }
+
+  return config.brokerAccessToken ?? config.accessToken;
+};
+
+const resolveMarketAccessToken = (config: TradeAiRuntimeConfig): string | undefined =>
+  config.growwAccessToken ?? config.marketAccessToken ?? config.accessToken;
+
 const mergeProviderHealthInput = (
   config: TradeAiRuntimeConfig,
   input: ProviderHealthInput = {},
-): ProviderHealthInput => ({
-  ...(config.brokerAccessToken ?? config.accessToken
-    ? { brokerAccessToken: config.brokerAccessToken ?? config.accessToken }
-    : {}),
-  ...(config.growwAccessToken ?? config.marketAccessToken ?? config.accessToken
-    ? {
-        marketAccessToken:
-          config.growwAccessToken ?? config.marketAccessToken ?? config.accessToken,
-      }
-    : {}),
-  ...(config.databaseUrl ? { databaseUrl: config.databaseUrl } : {}),
-  ...input,
-});
+): ProviderHealthInput => {
+  const brokerAccessToken = resolveBrokerAccessToken(config);
+  const marketAccessToken = resolveMarketAccessToken(config);
+  return {
+    ...(brokerAccessToken ? { brokerAccessToken } : {}),
+    ...(marketAccessToken ? { marketAccessToken } : {}),
+    ...(config.databaseUrl ? { databaseUrl: config.databaseUrl } : {}),
+    ...input,
+  };
+};
 
 const mergeBrokerPortfolioInput = (
   config: TradeAiRuntimeConfig,
   input: BrokerPortfolioWorkflowInput = {},
-): BrokerPortfolioWorkflowInput => ({
-  ...(config.brokerAccessToken ?? config.accessToken
-    ? { accessToken: config.brokerAccessToken ?? config.accessToken }
-    : {}),
-  ...(config.growwAccessToken ?? config.marketAccessToken ?? config.accessToken
-    ? { marketAccessToken: config.growwAccessToken ?? config.marketAccessToken ?? config.accessToken }
-    : {}),
-  ...(config.databaseUrl ? { databaseUrl: config.databaseUrl } : {}),
-  ...(config.persistPortfolioSnapshots !== undefined
-    ? { persist: config.persistPortfolioSnapshots }
-    : {}),
-  ...input,
-});
+): BrokerPortfolioWorkflowInput => {
+  const accessToken = resolveBrokerAccessToken(config);
+  const marketAccessToken = resolveMarketAccessToken(config);
+  return {
+    ...(accessToken ? { accessToken } : {}),
+    ...(marketAccessToken ? { marketAccessToken } : {}),
+    ...(config.databaseUrl ? { databaseUrl: config.databaseUrl } : {}),
+    ...(config.persistPortfolioSnapshots !== undefined
+      ? { persist: config.persistPortfolioSnapshots }
+      : {}),
+    ...input,
+  };
+};
 
 const mergeBrokerTradeBookInput = (
   config: TradeAiRuntimeConfig,
   input: BrokerTradeBookInput = {},
-): BrokerTradeBookInput => ({
-  ...(config.growwAccessToken ?? config.brokerAccessToken ?? config.accessToken
-    ? { accessToken: config.growwAccessToken ?? config.brokerAccessToken ?? config.accessToken }
-    : {}),
-  ...input,
-});
+): BrokerTradeBookInput => {
+  const accessToken = resolveBrokerAccessToken(config);
+  return {
+    ...(accessToken ? { accessToken } : {}),
+    ...input,
+  };
+};
 
 const mergePortfolioDashboardInput = (
   config: TradeAiRuntimeConfig,
   input: PortfolioDashboardInput = {},
 ): PortfolioDashboardInput => ({
+  ...(config.databaseUrl ? { databaseUrl: config.databaseUrl } : {}),
+  ...input,
+});
+
+const mergeDailyOperatorReadModelInput = (
+  config: TradeAiRuntimeConfig,
+  input: DailyOperatorReadModelInput = {},
+): DailyOperatorReadModelInput => ({
   ...(config.databaseUrl ? { databaseUrl: config.databaseUrl } : {}),
   ...input,
 });
@@ -198,40 +218,31 @@ const mergeManualPortfolioDecisionInput = (
 
 const createReviewResearchRunners = (
   dependencies: TradeAiWorkflowDependencies,
-): ReviewResearchRunners => ({
-  runBrokerPositionResearch: (input) =>
-    runIndstocksPositionResearch(
-      {
-        ...input,
-        ...(input.accessToken ?? dependencies.config.growwAccessToken ?? dependencies.config.brokerAccessToken ?? dependencies.config.accessToken
-          ? {
-              accessToken:
-                input.accessToken ??
-                dependencies.config.growwAccessToken ??
-                dependencies.config.brokerAccessToken ??
-                dependencies.config.accessToken,
-            }
-          : {}),
-      },
-      dependencies,
-    ),
-  runAuthenticatedEquityResearch: (input) =>
-    runEquityResearch(
-      {
-        ...input,
-        ...(dependencies.config.growwAccessToken ?? dependencies.config.marketAccessToken ?? dependencies.config.accessToken
-          ? {
-              accessToken:
-                dependencies.config.growwAccessToken ??
-                dependencies.config.marketAccessToken ??
-                dependencies.config.accessToken,
-            }
-          : {}),
-      },
-      dependencies,
-    ),
-  runPublicEquityResearch: (input) => runPublicEquityResearch(input, dependencies),
-});
+): ReviewResearchRunners => {
+  const brokerAccessToken = resolveBrokerAccessToken(dependencies.config);
+  const marketAccessToken = resolveMarketAccessToken(dependencies.config);
+  return {
+    runBrokerPositionResearch: (input) => {
+      const accessToken = input.accessToken ?? brokerAccessToken;
+      return runIndstocksPositionResearch(
+        {
+          ...input,
+          ...(accessToken ? { accessToken } : {}),
+        },
+        dependencies,
+      );
+    },
+    runAuthenticatedEquityResearch: (input) =>
+      runEquityResearch(
+        {
+          ...input,
+          ...(marketAccessToken ? { accessToken: marketAccessToken } : {}),
+        },
+        dependencies,
+      ),
+    runPublicEquityResearch: (input) => runPublicEquityResearch(input, dependencies),
+  };
+};
 
 export const createTradeAiWorkflowService = (
   options: CreateTradeAiWorkflowServiceOptions = {},
@@ -256,6 +267,16 @@ export const createTradeAiWorkflowService = (
         mergeDailyOperatorInput(config, dependencies, input),
         dependencies,
       ).pipe(Effect.map(buildDailyOperatorViewModel)),
+    getDailyOperatorReadOnlyReport: (input: DailyOperatorReadModelInput = {}) =>
+      getDailyOperatorReadOnlyReport(
+        mergeDailyOperatorReadModelInput(config, input),
+        dependencies,
+      ),
+    getDailyOperatorReadOnlyViewModel: (input: DailyOperatorReadModelInput = {}) =>
+      getDailyOperatorReadOnlyViewModel(
+        mergeDailyOperatorReadModelInput(config, input),
+        dependencies,
+      ),
     runEquityResearch: (input: EquityResearchInput) =>
       runEquityResearch(
         {

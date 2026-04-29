@@ -381,6 +381,12 @@ export const syncBrokerPortfolio = (
   input: BrokerPortfolioWorkflowInput = {},
   dependencies: TradeAiWorkflowDependencies = defaultDependencies,
 ) =>
+  syncBrokerPortfolioSnapshot(input, dependencies).pipe(Effect.map((result) => result.report));
+
+export const syncBrokerPortfolioSnapshot = (
+  input: BrokerPortfolioWorkflowInput = {},
+  dependencies: TradeAiWorkflowDependencies = defaultDependencies,
+) =>
   Effect.gen(function* () {
     const dbConfigured = canPersistPortfolioMemory(input.databaseUrl, dependencies);
     const shouldPersist = input.persist === false ? false : dbConfigured;
@@ -419,7 +425,11 @@ export const syncBrokerPortfolio = (
         )
       : undefined;
 
-    return buildPortfolioSyncReport(previous, current, fills.length, dbConfigured, persistence, tradeBook);
+    return {
+      snapshot: current,
+      fills,
+      report: buildPortfolioSyncReport(previous, current, fills.length, dbConfigured, persistence, tradeBook),
+    };
   });
 
 export const importManualPortfolioSnapshot = (

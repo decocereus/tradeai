@@ -198,7 +198,11 @@ export const mapGrowwHolding = (
   if (!tradingSymbol || !isin || typeof quantity !== "number" || typeof averagePrice !== "number") {
     return null;
   }
-  const lastTradedPrice = quote?.lastPrice ?? averagePrice;
+  if (!quote || typeof quote.lastPrice !== "number") {
+    return null;
+  }
+
+  const lastTradedPrice = quote.lastPrice;
   const closePrice = quote?.closePrice ?? lastTradedPrice;
   const marketValue = quantity * lastTradedPrice;
   const pnlAbsolute = (lastTradedPrice - averagePrice) * quantity;
@@ -217,6 +221,12 @@ export const mapGrowwHolding = (
     marketValue,
     pnlAbsolute,
     pnlPercent,
+    priceProvenance: {
+      status: "market_enriched",
+      source: "market",
+      marketDataProvider: "groww",
+      quoteSymbol: quote.tradingSymbol ?? quote.instrumentKey,
+    },
   };
 };
 
