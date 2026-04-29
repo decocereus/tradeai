@@ -209,6 +209,33 @@ describe("data-sources / indstocks", () => {
     expect(holdings[0]?.tradingSymbol).toBe("NIFTYBEES");
   });
 
+  it("keeps holdings usable when INDstocks quote enrichment fails", async () => {
+    const fetchStub = (async (input: RequestInfo | URL) => {
+      if (String(input) === `${INDSTOCKS_BASE_URL}/portfolio/holdings`) {
+        return new Response(
+          JSON.stringify({
+            data: [
+              {
+                security_id: "10576",
+                symbol: "NIFTYBEES",
+                isin: "INF204KB14I2",
+                total_qty: 11,
+                avg_price: 274.23,
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+
+      return new Response(JSON.stringify({ status: "error" }), { status: 400 });
+    }) as unknown as typeof fetch;
+
+    const holdings = await Effect.runPromise(fetchIndstocksHoldings("secret", fetchStub));
+    expect(holdings).toHaveLength(1);
+    expect(holdings[0]?.lastTradedPrice).toBe(274.23);
+  });
+
   it("fetches market quotes with injected fetch", async () => {
     const fetchStub = (async (input: RequestInfo | URL) => {
       expect(String(input)).toContain("scrip-codes=NSE_10576");

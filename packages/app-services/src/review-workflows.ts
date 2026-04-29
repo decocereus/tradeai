@@ -91,6 +91,39 @@ const resolveReviewWorkflowOptions = (options?: ReviewWorkflowOptions) => ({
   allowPublicResearchFallback: options?.allowPublicResearchFallback ?? true,
 });
 
+const formatResearchEvidence = (research: DailyResearchResult) => {
+  const parts = [
+    `verdict=${research.recommendation.verdict}`,
+    `conviction=${research.recommendation.conviction}`,
+    `instrumentScore=${research.instrumentScore.total}`,
+    `sectorScore=${research.sectorScore.total}`,
+    research.technicalAnalysis ? `trend=${research.technicalAnalysis.trend}` : undefined,
+    `quality=${research.researchQuality.completeness}`,
+    research.researchQuality.missingSignals.length > 0
+      ? `missing=${research.researchQuality.missingSignals.join(",")}`
+      : undefined,
+    research.researchQuality.fallbacksUsed.length > 0
+      ? `fallbacks=${research.researchQuality.fallbacksUsed.join(",")}`
+      : undefined,
+  ].filter((part): part is string => Boolean(part));
+  return parts.join(", ");
+};
+
+const formatResearchDrivers = (research: DailyResearchResult) => {
+  const reasons = [
+    ...research.recommendation.keyReasons,
+    ...research.instrumentScore.reasons,
+    ...research.sectorScore.reasons,
+  ];
+  const uniqueReasons = [...new Set(reasons.map((reason) => reason.trim()).filter(Boolean))];
+  return uniqueReasons.length > 0 ? ` Drivers: ${uniqueReasons.slice(0, 3).join("; ")}.` : "";
+};
+
+const buildReviewReason = (
+  baseReason: string,
+  research: DailyResearchResult,
+) => `${baseReason} Evidence: ${formatResearchEvidence(research)}.${formatResearchDrivers(research)}`;
+
 export const buildHoldingResearchReview = (
   symbol: string,
   query: string,
@@ -128,7 +161,7 @@ export const buildHoldingResearchReview = (
     symbol,
     query,
     status: assessment.status,
-    reason: assessment.reason,
+    reason: buildReviewReason(assessment.reason, outcome.research),
     verdict: outcome.research.recommendation.verdict,
     conviction: outcome.research.recommendation.conviction,
     runLabel: outcome.research.runLabel,

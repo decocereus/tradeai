@@ -70,6 +70,9 @@ describe("app-services / review workflows", () => {
     ]);
 
     expect(review.status).toBe("aligned");
+    expect(review.reason).toContain("verdict=buy");
+    expect(review.reason).toContain("conviction=70");
+    expect(review.reason).toContain("quality=complete");
     expect(review.researchQuality?.completeness).toBe("complete");
     expect(report.alignedCount).toBe(1);
     expect(report.errorCount).toBe(1);

@@ -306,10 +306,14 @@ export const fetchIndstocksHoldings = (
           record.security_id ? buildIndstocksScripCode(record.security_id, resolveHoldingExchangeSegment(record)) : undefined,
         )
         .filter((entry): entry is string => Boolean(entry));
-      const quotesByScripCode =
-        scripCodes.length > 0
-          ? await Effect.runPromise(fetchIndstocksMarketQuotes(scripCodes, accessToken, fetchImpl))
-          : {};
+      let quotesByScripCode: Record<string, IndstocksMarketQuoteEntry> = {};
+      if (scripCodes.length > 0) {
+        try {
+          quotesByScripCode = await Effect.runPromise(fetchIndstocksMarketQuotes(scripCodes, accessToken, fetchImpl));
+        } catch {
+          quotesByScripCode = {};
+        }
+      }
 
       return parseIndstocksHoldingsResponse(payload, quotesByScripCode);
     },
