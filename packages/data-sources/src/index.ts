@@ -8,3 +8,4 @@ export * from "./upstox-candles.ts";
 export * from "./upstox-fundamentals.ts";
 export * from "./upstox-instruments.ts";
 export * from "./upstox.ts";
+export * from "./truedata.ts";

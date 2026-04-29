@@ -8,6 +8,7 @@ import {
   fetchIndstocksTradeBook,
   fetchUpstoxNseInstrumentProfiles,
   fetchUpstoxQuoteSnapshot,
+  fetchTrueDataQuoteSnapshot,
   loadDemoResearchPacket,
   searchAmfiNavEntries,
   searchBseAnnouncements,
@@ -47,6 +48,9 @@ export interface TradeAiRuntimeConfig {
   accessToken?: string;
   brokerAccessToken?: string;
   marketAccessToken?: string;
+  marketDataProvider?: "upstox" | "truedata";
+  trueDataUserId?: string;
+  trueDataPassword?: string;
   databaseUrl?: string;
   allowPublicResearchFallback?: boolean;
   persistPortfolioSnapshots?: boolean;
@@ -172,6 +176,35 @@ export const defaultTradeAiMarketSources: TradeAiMarketSources = {
   buildEquityQuoteSnapshot: buildUpstoxQuoteSnapshot,
 };
 
+const normalizeTrueDataSymbol = (query: string) => {
+  const trimmed = query.trim();
+  const withoutExchange = trimmed.includes("|") ? trimmed.split("|").at(-1) ?? trimmed : trimmed;
+  return withoutExchange.replace(/-EQ$/i, "").toUpperCase();
+};
+
+const createTrueDataMarketSources = (
+  config: TradeAiRuntimeConfig,
+): Partial<TradeAiMarketSources> => ({
+  searchEquityInstruments: (query) => {
+    const symbol = normalizeTrueDataSymbol(query);
+    return Effect.succeed([
+      {
+        instrumentKey: symbol,
+        exchange: "NSE",
+        tradingSymbol: symbol,
+        shortName: symbol,
+        instrumentType: "EQ",
+      },
+    ]);
+  },
+  fetchEquityQuotes: (instrumentKeys) =>
+    fetchTrueDataQuoteSnapshot({
+      symbols: instrumentKeys.map(normalizeTrueDataSymbol),
+      ...(config.trueDataUserId ? { userId: config.trueDataUserId } : {}),
+      ...(config.trueDataPassword ? { password: config.trueDataPassword } : {}),
+    }),
+});
+
 export const defaultTradeAiResearchSources: TradeAiResearchSources = {
   loadDemoResearchPacket: () => loadDemoResearchPacket,
   buildEquityResearchPacket,
@@ -202,6 +235,9 @@ export const createTradeAiWorkflowDependencies = (
   },
   marketSources: {
     ...defaultTradeAiMarketSources,
+    ...(options.config?.marketDataProvider === "truedata"
+      ? createTrueDataMarketSources(options.config)
+      : {}),
     ...options.marketSources,
   },
   researchSources: {

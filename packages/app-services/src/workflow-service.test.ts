@@ -176,4 +176,35 @@ describe("app-services / workflow service", () => {
       "memory",
     ]);
   });
+
+  it("uses TrueData market sources when configured", async () => {
+    const calls: string[] = [];
+    const tradeAi = createTradeAiWorkflowService({
+      config: {
+        marketDataProvider: "truedata",
+        trueDataUserId: "user",
+        trueDataPassword: "password",
+      },
+      marketSources: {
+        fetchEquityQuotes: (symbols) => {
+          calls.push(`quotes:${symbols.join(",")}`);
+          return Effect.succeed([
+            {
+              instrumentKey: "RELIANCE",
+              tradingSymbol: "RELIANCE",
+              lastPrice: 2500,
+            },
+          ]);
+        },
+      },
+    });
+
+    const quotes = await Effect.runPromise(
+      tradeAi.getEquityQuoteSnapshots({ instrumentKeys: ["RELIANCE"] }),
+    );
+
+    expect(quotes[0]?.instrumentKey).toBe("RELIANCE");
+    expect(quotes[0]?.tradingSymbol).toBe("RELIANCE");
+    expect(calls).toEqual(["quotes:RELIANCE"]);
+  });
 });

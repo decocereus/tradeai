@@ -10,14 +10,26 @@ const readEnvValue = (name: string): string | undefined => {
   return value ? value : undefined;
 };
 
+const readMarketDataProvider = () => {
+  const provider = readEnvValue("TRADEAI_MARKET_DATA_PROVIDER");
+  return provider === "truedata" ? "truedata" : "upstox";
+};
+
 const buildLiveService = () =>
   createTradeAiWorkflowService({
     config: {
+      marketDataProvider: readMarketDataProvider(),
       ...(readEnvValue("INDSTOCKS_ACCESS_TOKEN")
         ? { brokerAccessToken: readEnvValue("INDSTOCKS_ACCESS_TOKEN") }
         : {}),
       ...(readEnvValue("UPSTOX_ACCESS_TOKEN")
         ? { marketAccessToken: readEnvValue("UPSTOX_ACCESS_TOKEN") }
+        : {}),
+      ...(readEnvValue("TRUEDATA_USER_ID")
+        ? { trueDataUserId: readEnvValue("TRUEDATA_USER_ID") }
+        : {}),
+      ...(readEnvValue("TRUEDATA_PASSWORD")
+        ? { trueDataPassword: readEnvValue("TRUEDATA_PASSWORD") }
         : {}),
       ...(readEnvValue("DATABASE_URL") ? { databaseUrl: readEnvValue("DATABASE_URL") } : {}),
     },
@@ -45,14 +57,17 @@ describe("integration / workflow service live adapters", () => {
   });
 
   it("fetches live market quotes through the service boundary", async () => {
-    const required = ["UPSTOX_ACCESS_TOKEN"];
+    const provider = readMarketDataProvider();
+    const required =
+      provider === "truedata" ? ["TRUEDATA_USER_ID", "TRUEDATA_PASSWORD"] : ["UPSTOX_ACCESS_TOKEN"];
     if (!hasRequiredEnv(required)) {
       console.log(skipReason(required));
       return;
     }
 
-    const instrumentKey = readEnvValue("TRADEAI_INTEGRATION_INSTRUMENT_KEY") ??
-      "NSE_EQ|INE002A01018";
+    const instrumentKey =
+      readEnvValue("TRADEAI_INTEGRATION_INSTRUMENT_KEY") ??
+      (provider === "truedata" ? "RELIANCE" : "NSE_EQ|INE002A01018");
     const tradeAi = buildLiveService();
     const quotes = await Effect.runPromise(
       tradeAi.getEquityQuoteSnapshots({ instrumentKeys: [instrumentKey] }),
@@ -76,4 +91,3 @@ describe("integration / workflow service live adapters", () => {
     expect(Array.isArray(dashboard.recentSnapshots)).toBe(true);
   });
 });
-

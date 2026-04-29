@@ -16,6 +16,9 @@ const readEnvBoolean = (name: string): boolean | undefined => {
 export const buildRuntimeConfigFromEnv = (): TradeAiRuntimeConfig => {
   const brokerAccessToken = readEnvValue("INDSTOCKS_ACCESS_TOKEN");
   const marketAccessToken = readEnvValue("UPSTOX_ACCESS_TOKEN");
+  const marketDataProvider = readEnvValue("TRADEAI_MARKET_DATA_PROVIDER");
+  const trueDataUserId = readEnvValue("TRUEDATA_USER_ID");
+  const trueDataPassword = readEnvValue("TRUEDATA_PASSWORD");
   const databaseUrl = readEnvValue("DATABASE_URL");
   const allowPublicResearchFallback = readEnvBoolean(
     "TRADEAI_ALLOW_PUBLIC_RESEARCH_FALLBACK",
@@ -25,9 +28,13 @@ export const buildRuntimeConfigFromEnv = (): TradeAiRuntimeConfig => {
   return {
     ...(brokerAccessToken ? { brokerAccessToken } : {}),
     ...(marketAccessToken ? { marketAccessToken } : {}),
+    ...(marketDataProvider === "truedata" || marketDataProvider === "upstox"
+      ? { marketDataProvider }
+      : {}),
+    ...(trueDataUserId ? { trueDataUserId } : {}),
+    ...(trueDataPassword ? { trueDataPassword } : {}),
     ...(databaseUrl ? { databaseUrl } : {}),
     ...(allowPublicResearchFallback !== undefined ? { allowPublicResearchFallback } : {}),
     ...(persistPortfolioSnapshots !== undefined ? { persistPortfolioSnapshots } : {}),
   };
 };
-
