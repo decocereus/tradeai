@@ -4,6 +4,7 @@ import type {
   ProviderHealthReport,
 } from "@tradeai/domain";
 import {
+  type DailyOperatorViewModel,
   summarizeDailyOperatorReport,
   summarizeHoldingReviewTrendReport,
   summarizeHoldingsReview,
@@ -27,6 +28,17 @@ const formatPriceProvenance = (
 };
 
 const formatAssetType = (assetType?: string) => assetType?.replace("_", " ") ?? "unknown";
+
+const formatMoney = (value: number) =>
+  new Intl.NumberFormat("en-IN", {
+    maximumFractionDigits: 2,
+    minimumFractionDigits: 2,
+  }).format(value);
+
+const formatPercent = (value: number) => `${value.toFixed(2)}%`;
+
+const truncate = (value: string, maxLength: number) =>
+  value.length > maxLength ? `${value.slice(0, maxLength - 3)}...` : value;
 
 export const renderList = (title: string, items: readonly string[]) => {
   console.log(`\n${title}`);
@@ -223,5 +235,101 @@ export const renderDailyOperatorReport = (report: DailyOperatorReport) => {
   if (report.dashboard) {
     renderDivider("Portfolio Dashboard");
     renderDashboardSection(report.dashboard);
+  }
+};
+
+export const renderDailyOperatorViewModel = (view: DailyOperatorViewModel) => {
+  renderDivider("Status");
+  console.log(`Generated: ${view.generatedAt}`);
+  console.log(`Providers: ${view.providerHealth.status}`);
+  if (view.dataQuality.providerIssues.length > 0) {
+    renderList(
+      "Provider issues",
+      view.dataQuality.providerIssues.map(
+        (issue) => `${issue.name} | ${issue.provider} | ${issue.status} | ${issue.action ?? issue.message}`,
+      ),
+    );
+  }
+
+  renderDivider("Portfolio");
+  console.log(`Broker: ${view.portfolio.broker ?? "unknown"}`);
+  console.log(`Snapshot: ${view.portfolio.snapshotId ?? "none"}`);
+  console.log(
+    `${view.portfolio.holdingsCount} holdings | market value ${formatMoney(view.portfolio.marketValue)} | pnl ${formatPercent(view.portfolio.weightedPnlPercent)}`,
+  );
+  console.log(
+    `Data quality: ${view.portfolio.priceFallbacks} price fallbacks | ${view.portfolio.partialResearch} incomplete research items`,
+  );
+
+  if (view.assetAllocation.length > 0) {
+    renderList(
+      "Asset allocation",
+      view.assetAllocation.map(
+        (allocation) =>
+          `${formatAssetType(allocation.assetType)} | ${formatMoney(allocation.marketValue)} | ${formatPercent(allocation.percentage)}`,
+      ),
+    );
+  }
+
+  if (view.actionItems.length > 0) {
+    renderList(
+      "Today's actions",
+      view.actionItems.map((action) => `[${action.priority}] ${action.title} | ${truncate(action.detail, 180)}`),
+    );
+  } else {
+    console.log("\nToday's actions");
+    console.log("- No urgent actions from this run.");
+  }
+
+  if (view.conflicts.length > 0) {
+    renderList(
+      "Conflicts",
+      view.conflicts.map(
+        (review) => `${review.symbol} | ${review.status}${formatReviewQuality(review.researchQuality)} | ${truncate(review.reason, 180)}`,
+      ),
+    );
+  }
+
+  if (view.reviewCandidates.length > 0) {
+    renderList(
+      "Review candidates",
+      view.reviewCandidates.map(
+        (review) => `${review.symbol} | ${review.status}${formatReviewQuality(review.researchQuality)} | ${truncate(review.reason, 160)}`,
+      ),
+    );
+  }
+
+  if (view.holdings.length > 0) {
+    renderList(
+      "Holdings",
+      view.holdings.map(
+        (holding) =>
+          `${holding.symbol}${holding.instrumentName ? ` (${holding.instrumentName})` : ""} | ${formatAssetType(holding.assetType)} | value ${formatMoney(holding.marketValue)} | pnl ${formatPercent(holding.pnlPercent)}${formatPriceProvenance(holding.priceProvenance)}`,
+      ),
+    );
+  }
+
+  if (
+    view.dataQuality.missingOrFallbackPrices.length > 0 ||
+    view.dataQuality.incompleteResearch.length > 0
+  ) {
+    renderDivider("Data Quality");
+    if (view.dataQuality.missingOrFallbackPrices.length > 0) {
+      renderList(
+        "Price fallback holdings",
+        view.dataQuality.missingOrFallbackPrices.map(
+          (holding) => `${holding.symbol} | ${holding.priceProvenance?.message ?? "fallback price used"}`,
+        ),
+      );
+    }
+    if (view.dataQuality.incompleteResearch.length > 0) {
+      renderList(
+        "Incomplete research",
+        view.dataQuality.incompleteResearch.map(
+          (review) =>
+            `${review.symbol} | quality ${review.researchQuality?.completeness ?? "unknown"} | missing ${review.researchQuality?.missingSignals.join(",") || "unknown"}`,
+        ),
+      );
+    }
   }
 };

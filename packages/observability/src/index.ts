@@ -1,7 +1,12 @@
 import pino from "pino";
 
 const jsonOutputRequested = process.argv.includes("--json");
-const logLevel = jsonOutputRequested ? "silent" : process.env.LOG_LEVEL ?? "info";
+const tuiOutputRequested = process.argv.some((arg) => arg.includes("apps/tui/src/index.ts"));
+const tuiLogsEnabled = process.env.TRADEAI_TUI_SHOW_LOGS === "true";
+const logLevel =
+  jsonOutputRequested || (tuiOutputRequested && !tuiLogsEnabled)
+    ? "silent"
+    : process.env.LOG_LEVEL ?? "info";
 const pretty = process.env.LOG_PRETTY !== "false";
 
 export const logger = pino(

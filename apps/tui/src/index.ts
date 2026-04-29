@@ -21,6 +21,7 @@ import { Effect } from "effect";
 import { parseTuiCliOptions } from "./cli-options.ts";
 import {
   renderDailyOperatorReport,
+  renderDailyOperatorViewModel,
   renderDashboardSection,
   renderDivider,
   renderList,
@@ -212,17 +213,30 @@ const main = Effect.gen(function* () {
 
     console.log("TradeAI Daily Operator Report");
     console.log("=============================");
-    const report = yield* tradeAi.getDailyOperatorReport().pipe(
-      Effect.catchAll((error) => {
-        console.log(error instanceof Error ? error.message : String(error));
-        return Effect.succeed(undefined);
-      }),
-    );
-
-    if (!report) {
-      console.log("No daily operator report was produced.");
+    if (rawFlag) {
+      const report = yield* tradeAi.getDailyOperatorReport().pipe(
+        Effect.catchAll((error) => {
+          console.log(error instanceof Error ? error.message : String(error));
+          return Effect.succeed(undefined);
+        }),
+      );
+      if (!report) {
+        console.log("No daily operator report was produced.");
+      } else {
+        renderDailyOperatorReport(report);
+      }
     } else {
-      renderDailyOperatorReport(report);
+      const viewModel = yield* tradeAi.getDailyOperatorViewModel().pipe(
+        Effect.catchAll((error) => {
+          console.log(error instanceof Error ? error.message : String(error));
+          return Effect.succeed(undefined);
+        }),
+      );
+      if (!viewModel) {
+        console.log("No daily operator report was produced.");
+      } else {
+        renderDailyOperatorViewModel(viewModel);
+      }
     }
     return;
   }

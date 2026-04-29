@@ -237,7 +237,9 @@ export const buildDailyOperatorViewModel = (
     (holding) => holding.priceProvenance?.source === "fallback",
   );
   const incompleteResearch = latestReview?.reviews.filter(
-    (review) => review.researchQuality?.completeness !== "complete",
+    (review) =>
+      review.researchQuality !== undefined &&
+      review.researchQuality.completeness !== "complete",
   ) ?? [];
   const providerIssues = report.health.checks.filter((check) => check.status !== "ok");
 

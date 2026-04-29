@@ -17,6 +17,8 @@ LOG_LEVEL=info
 LOG_PRETTY=true
 ```
 
+The TUI suppresses workflow logs by default so reports stay readable. Set `TRADEAI_TUI_SHOW_LOGS=true` when debugging provider or database internals.
+
 Instead of a daily `GROWW_ACCESS_TOKEN`, you can set:
 
 ```bash
