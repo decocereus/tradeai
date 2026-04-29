@@ -6,6 +6,9 @@ export type AssetType = Schema.Schema.Type<typeof AssetType>;
 export const BrokerSource = Schema.Literal("groww", "indstocks", "manual_csv");
 export type BrokerSource = Schema.Schema.Type<typeof BrokerSource>;
 
+export const MarketDataProvider = Schema.Literal("groww");
+export type MarketDataProvider = Schema.Schema.Type<typeof MarketDataProvider>;
+
 export const RiskBucket = Schema.Literal("stable", "moderate", "growth", "speculative");
 export type RiskBucket = Schema.Schema.Type<typeof RiskBucket>;
 
@@ -271,6 +274,15 @@ export const BrokerHolding = Schema.Struct({
   marketValue: Schema.Number,
   pnlAbsolute: Schema.Number,
   pnlPercent: Schema.Number,
+  priceProvenance: Schema.optional(
+    Schema.Struct({
+      status: Schema.Literal("broker", "market_enriched", "market_missing", "market_unavailable"),
+      source: Schema.Literal("broker", "market", "fallback"),
+      marketDataProvider: Schema.optional(MarketDataProvider),
+      quoteSymbol: Schema.optional(Schema.String),
+      message: Schema.optional(Schema.String),
+    }),
+  ),
 });
 export type BrokerHolding = Schema.Schema.Type<typeof BrokerHolding>;
 
@@ -300,6 +312,15 @@ export const PortfolioPositionSnapshot = Schema.Struct({
   pnlAbsolute: Schema.Number,
   pnlPercent: Schema.Number,
   sourceBroker: BrokerSource,
+  priceProvenance: Schema.optional(
+    Schema.Struct({
+      status: Schema.Literal("broker", "market_enriched", "market_missing", "market_unavailable"),
+      source: Schema.Literal("broker", "market", "fallback"),
+      marketDataProvider: Schema.optional(MarketDataProvider),
+      quoteSymbol: Schema.optional(Schema.String),
+      message: Schema.optional(Schema.String),
+    }),
+  ),
 });
 export type PortfolioPositionSnapshot = Schema.Schema.Type<typeof PortfolioPositionSnapshot>;
 
@@ -357,6 +378,20 @@ export const PortfolioSyncReport = Schema.Struct({
   persisted: Schema.Boolean,
   persistedPositions: Schema.optional(Schema.Number),
   persistedTradeFills: Schema.optional(Schema.Number),
+  priceEnrichment: Schema.optional(
+    Schema.Struct({
+      marketDataProvider: MarketDataProvider,
+      enrichedPositions: Schema.Number,
+      fallbackPositions: Schema.Number,
+      missingSymbols: Schema.Array(Schema.String),
+    }),
+  ),
+  tradeBook: Schema.optional(
+    Schema.Struct({
+      status: Schema.Literal("available", "unavailable", "unsupported"),
+      message: Schema.optional(Schema.String),
+    }),
+  ),
   diff: PortfolioSnapshotDiff,
 });
 export type PortfolioSyncReport = Schema.Schema.Type<typeof PortfolioSyncReport>;
@@ -422,6 +457,15 @@ export const PortfolioHoldingSnapshotSummary = Schema.Struct({
   pnlAbsolute: Schema.Number,
   pnlPercent: Schema.Number,
   quantity: Schema.Number,
+  priceProvenance: Schema.optional(
+    Schema.Struct({
+      status: Schema.Literal("broker", "market_enriched", "market_missing", "market_unavailable"),
+      source: Schema.Literal("broker", "market", "fallback"),
+      marketDataProvider: Schema.optional(MarketDataProvider),
+      quoteSymbol: Schema.optional(Schema.String),
+      message: Schema.optional(Schema.String),
+    }),
+  ),
 });
 export type PortfolioHoldingSnapshotSummary = Schema.Schema.Type<typeof PortfolioHoldingSnapshotSummary>;
 

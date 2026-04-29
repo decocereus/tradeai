@@ -5,6 +5,7 @@ import {
 import type {
   BrokerHolding,
   BrokerSource,
+  MarketDataProvider,
   PortfolioMemorySnapshot,
   PortfolioSyncReport,
   PortfolioPositionSnapshot,
@@ -36,6 +37,7 @@ export interface PortfolioPersistenceOptions {
 
 export interface BrokerPortfolioWorkflowInput {
   accessToken?: string;
+  marketAccessToken?: string;
   databaseUrl?: string;
   persist?: boolean;
 }
@@ -66,11 +68,43 @@ const shouldPersistPortfolioMemory = (
 
 const inferBrokerSourceFromPositions = (
   positions: readonly PortfolioPositionSnapshot[],
-  fallback: BrokerSource = "groww",
+  fallback: BrokerSource = "indstocks",
 ): BrokerSource => positions[0]?.sourceBroker ?? fallback;
 
-export const enrichBrokerHoldingsWithInstrumentNames = (
+const inferMarketDataProvider = (
+  dependencies: TradeAiWorkflowDependencies,
+): MarketDataProvider => dependencies.config.marketDataProvider ?? "groww";
+
+const normalizeMarketSymbol = (symbol: string) =>
+  symbol
+    .replace(/-EQ$/i, "")
+    .replace(/_[A-Z]+$/i, "")
+    .toUpperCase();
+
+const summarizePriceEnrichment = (
+  positions: readonly PortfolioPositionSnapshot[],
+  marketDataProvider: MarketDataProvider,
+): NonNullable<PortfolioSyncReport["priceEnrichment"]> => {
+  const enrichedPositions = positions.filter(
+    (position) => position.priceProvenance?.status === "market_enriched",
+  ).length;
+  const missingSymbols = positions
+    .filter((position) =>
+      ["market_missing", "market_unavailable"].includes(position.priceProvenance?.status ?? ""),
+    )
+    .map((position) => position.symbol);
+
+  return {
+    marketDataProvider,
+    enrichedPositions,
+    fallbackPositions: missingSymbols.length,
+    missingSymbols,
+  };
+};
+
+export const enrichBrokerHoldingsWithMarketData = (
   holdings: readonly BrokerHolding[],
+  input: Pick<BrokerPortfolioWorkflowInput, "marketAccessToken"> = {},
   dependencies: TradeAiWorkflowDependencies = defaultDependencies,
 ) =>
   Effect.gen(function* () {
@@ -78,11 +112,12 @@ export const enrichBrokerHoldingsWithInstrumentNames = (
       return [];
     }
 
+    const marketDataProvider = inferMarketDataProvider(dependencies);
     const profiles = yield* dependencies.marketSources.fetchNseInstrumentProfiles().pipe(
       Effect.catchAll((error) =>
         Effect.sync(() => {
           log.warn(
-            { action: "enrichBrokerHoldingsWithInstrumentNames", error },
+            { action: "enrichBrokerHoldingsWithMarketData.profiles", error },
             "instrument-name enrichment unavailable",
           );
           return [];
@@ -93,19 +128,68 @@ export const enrichBrokerHoldingsWithInstrumentNames = (
       profiles.map((profile) => [profile.tradingSymbol.toUpperCase(), profile]),
     );
 
-    return holdings.map((holding) => {
-      const normalizedHoldingSymbol = holding.tradingSymbol.replace(/-EQ$/i, "").toUpperCase();
-      const profile = profilesBySymbol.get(normalizedHoldingSymbol);
-      const instrumentName = profile?.name || profile?.shortName || holding.instrumentName;
+    return yield* Effect.all(
+      holdings.map((holding) =>
+        Effect.gen(function* () {
+          const normalizedHoldingSymbol = normalizeMarketSymbol(holding.tradingSymbol);
+          const profile = profilesBySymbol.get(normalizedHoldingSymbol);
+          const instrumentName = profile?.name || profile?.shortName || holding.instrumentName;
+          const marketSymbol = profile?.tradingSymbol ?? normalizeMarketSymbol(holding.tradingSymbol);
+          const quoteResult = yield* Effect.either(
+            dependencies.marketSources.fetchEquityQuotes([marketSymbol], input.marketAccessToken),
+          );
+          const quote =
+            quoteResult._tag === "Right"
+              ? quoteResult.right.find(
+                  (entry) => normalizeMarketSymbol(entry.tradingSymbol ?? entry.instrumentKey) === marketSymbol,
+                )
+              : undefined;
+          const priceProvenance =
+            quote
+              ? {
+                  status: "market_enriched" as const,
+                  source: "market" as const,
+                  marketDataProvider,
+                  quoteSymbol: quote.tradingSymbol ?? marketSymbol,
+                }
+              : quoteResult._tag === "Left"
+                ? {
+                    status: "market_unavailable" as const,
+                    source: "fallback" as const,
+                    marketDataProvider,
+                    quoteSymbol: marketSymbol,
+                    message: quoteResult.left.message,
+                  }
+                : {
+                    status: "market_missing" as const,
+                    source: "fallback" as const,
+                    marketDataProvider,
+                    quoteSymbol: marketSymbol,
+                  };
 
-      return instrumentName
-        ? {
+          const lastTradedPrice = quote?.lastPrice ?? holding.lastTradedPrice;
+          const closePrice = quote?.closePrice ?? holding.closePrice;
+          const marketValue = holding.quantity * lastTradedPrice;
+          const pnlAbsolute = (lastTradedPrice - holding.averagePrice) * holding.quantity;
+          const pnlPercent =
+            holding.averagePrice > 0 ? ((lastTradedPrice - holding.averagePrice) / holding.averagePrice) * 100 : 0;
+
+          return {
             ...holding,
-            instrumentName,
-          }
-        : holding;
-    });
+            ...(instrumentName ? { instrumentName } : {}),
+            lastTradedPrice,
+            closePrice,
+            marketValue,
+            pnlAbsolute,
+            pnlPercent,
+            priceProvenance,
+          };
+        }),
+      ),
+    );
   });
+
+export const enrichBrokerHoldingsWithInstrumentNames = enrichBrokerHoldingsWithMarketData;
 
 export const getBrokerHoldings = (
   input: BrokerPortfolioWorkflowInput = {},
@@ -113,7 +197,7 @@ export const getBrokerHoldings = (
 ) =>
   Effect.gen(function* () {
     const holdings = yield* dependencies.brokerSources.fetchBrokerHoldings(input.accessToken);
-    return yield* enrichBrokerHoldingsWithInstrumentNames(holdings, dependencies);
+    return yield* enrichBrokerHoldingsWithMarketData(holdings, input, dependencies);
   });
 
 export const getBrokerTradeBook = (
@@ -213,8 +297,15 @@ export const buildPortfolioSyncReport = (
     positionsInserted: number;
     tradeFillsInserted: number;
   },
+  tradeBook?: NonNullable<PortfolioSyncReport["tradeBook"]>,
 ): PortfolioSyncReport => {
   const diff = diffPortfolioMemorySnapshots(previous, current);
+  const priceEnrichment = current.positions.some((position) => position.priceProvenance)
+    ? summarizePriceEnrichment(
+        current.positions,
+        current.positions.find((position) => position.priceProvenance?.marketDataProvider)?.priceProvenance?.marketDataProvider ?? "groww",
+      )
+    : undefined;
   return {
     broker: current.broker,
     dbConfigured,
@@ -229,6 +320,8 @@ export const buildPortfolioSyncReport = (
           persistedTradeFills: persistence.tradeFillsInserted,
         }
       : {}),
+    ...(priceEnrichment ? { priceEnrichment } : {}),
+    ...(tradeBook ? { tradeBook } : {}),
     diff,
   };
 };
@@ -242,18 +335,24 @@ export const syncBrokerPortfolio = (
     const shouldPersist = input.persist === false ? false : dbConfigured;
     log.info({ action: "syncBrokerPortfolio", dbConfigured }, "running portfolio sync");
     const current = yield* getBrokerPortfolioMemorySnapshot(input, dependencies);
-    const fills = yield* getBrokerTradeBook(
+    const tradeBookResult = yield* Effect.either(getBrokerTradeBook(
       {
         segment: "EQUITY",
         ...(input.accessToken ? { accessToken: input.accessToken } : {}),
       },
       dependencies,
-    ).pipe(
-      Effect.catchAll((error) => {
-        log.warn({ action: "syncBrokerPortfolio.tradeBook", error }, "trade-book unavailable");
-        return Effect.succeed([]);
-      }),
-    );
+    ));
+    const fills = tradeBookResult._tag === "Right" ? tradeBookResult.right : [];
+    const tradeBook =
+      tradeBookResult._tag === "Right"
+        ? { status: "available" as const }
+        : {
+            status: tradeBookResult.left.message.includes("not implemented") ? "unsupported" as const : "unavailable" as const,
+            message: tradeBookResult.left.message,
+          };
+    if (tradeBookResult._tag === "Left") {
+      log.warn({ action: "syncBrokerPortfolio.tradeBook", error: tradeBookResult.left }, "trade-book unavailable");
+    }
 
     const previous = dbConfigured
       ? yield* Effect.tryPromise(() =>
@@ -269,7 +368,7 @@ export const syncBrokerPortfolio = (
         )
       : undefined;
 
-    return buildPortfolioSyncReport(previous, current, fills.length, dbConfigured, persistence);
+    return buildPortfolioSyncReport(previous, current, fills.length, dbConfigured, persistence, tradeBook);
   });
 
 export const importManualPortfolioSnapshot = (

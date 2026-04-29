@@ -7,7 +7,12 @@
 
 ```bash
 DATABASE_URL=postgresql://postgres:postgres@localhost:5433/tradeai
+TRADEAI_BROKER_DATA_PROVIDER=indstocks
+INDSTOCKS_ACCESS_TOKEN=...
+TRADEAI_MARKET_DATA_PROVIDER=groww
 GROWW_ACCESS_TOKEN=...
+TRADEAI_RESEARCH_DATA_PROVIDER=aftermarkets
+AFTERMARKETS_API_KEY=...
 LOG_LEVEL=info
 LOG_PRETTY=true
 ```
@@ -22,10 +27,6 @@ GROWW_API_SECRET=...
 Optional:
 
 ```bash
-TRADEAI_BROKER_DATA_PROVIDER=indstocks
-INDSTOCKS_ACCESS_TOKEN=...
-TRADEAI_RESEARCH_DATA_PROVIDER=aftermarkets
-AFTERMARKETS_API_KEY=...
 TRADEAI_ALLOW_PUBLIC_RESEARCH_FALLBACK=true
 TRADEAI_PERSIST_PORTFOLIO_SNAPSHOTS=true
 ```
@@ -49,6 +50,8 @@ You should see:
 
 - live holdings from INDstocks
 - symbols plus company/instrument names
+- Groww-enriched prices where quote lookup succeeds
+- explicit price fallback markers where quote lookup misses or is unavailable
 
 ### 2. Persist a fresh broker snapshot
 
@@ -157,7 +160,8 @@ TRADEAI_RUN_INTEGRATION_TESTS=1 bun run test:integration
 
 Each live case still requires its own env:
 
-- `GROWW_ACCESS_TOKEN` for broker holdings and market quotes
+- `INDSTOCKS_ACCESS_TOKEN` for broker holdings and trade book
+- `GROWW_ACCESS_TOKEN`, or `GROWW_API_KEY` plus `GROWW_API_SECRET`, for market quotes
 - `DATABASE_URL` for persisted dashboard loading
 - optional `TRADEAI_INTEGRATION_INSTRUMENT_KEY` to override the default quote instrument
 
@@ -169,9 +173,11 @@ Each live case still requires its own env:
 - real broker-backed snapshots
 - real dashboard persistence
 - real holding review history
+- Groww quote enrichment on top of INDstocks-held positions
+- explicit unsupported/unavailable trade-book status in sync reports
 
 ### Still evolving
 
-- general research/search still needs full INDstocks migration
+- Groww does not currently provide trade-book/history through this adapter; INDstocks remains the broker history source
 - chat/operator experience still needs to replace the command-first TUI
 - some review sections still show symbols rather than full display names

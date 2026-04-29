@@ -63,8 +63,11 @@ const mergeBrokerPortfolioInput = (
   config: TradeAiRuntimeConfig,
   input: BrokerPortfolioWorkflowInput = {},
 ): BrokerPortfolioWorkflowInput => ({
-  ...(config.growwAccessToken ?? config.brokerAccessToken ?? config.accessToken
-    ? { accessToken: config.growwAccessToken ?? config.brokerAccessToken ?? config.accessToken }
+  ...(config.brokerAccessToken ?? config.accessToken
+    ? { accessToken: config.brokerAccessToken ?? config.accessToken }
+    : {}),
+  ...(config.growwAccessToken ?? config.marketAccessToken ?? config.accessToken
+    ? { marketAccessToken: config.growwAccessToken ?? config.marketAccessToken ?? config.accessToken }
     : {}),
   ...(config.databaseUrl ? { databaseUrl: config.databaseUrl } : {}),
   ...(config.persistPortfolioSnapshots !== undefined

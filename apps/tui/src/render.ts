@@ -10,6 +10,16 @@ import {
 const formatReviewQuality = (quality: PortfolioDashboardReport["topConflicts"][number]["researchQuality"]) =>
   quality ? ` | quality ${quality.completeness}` : "";
 
+const formatPriceProvenance = (
+  provenance: PortfolioDashboardReport["topWinners"][number]["priceProvenance"],
+) => {
+  if (!provenance) return "";
+  if (provenance.status === "market_enriched") {
+    return ` | price ${provenance.marketDataProvider ?? "market"}`;
+  }
+  return ` | price fallback:${provenance.quoteSymbol ?? provenance.status}`;
+};
+
 export const renderList = (title: string, items: readonly string[]) => {
   console.log(`\n${title}`);
   for (const item of items) {
@@ -85,7 +95,7 @@ export const renderDashboardSection = (
       "Top winners",
       report.topWinners.map(
         (position) =>
-          `${formatHoldingLabel(position.symbol, position.instrumentName)} | pnl ${position.pnlPercent.toFixed(2)}% | value ${position.marketValue.toFixed(2)}`,
+          `${formatHoldingLabel(position.symbol, position.instrumentName)} | pnl ${position.pnlPercent.toFixed(2)}% | value ${position.marketValue.toFixed(2)}${formatPriceProvenance(position.priceProvenance)}`,
       ),
     );
   }
@@ -95,7 +105,7 @@ export const renderDashboardSection = (
       "Top losers",
       report.topLosers.map(
         (position) =>
-          `${formatHoldingLabel(position.symbol, position.instrumentName)} | pnl ${position.pnlPercent.toFixed(2)}% | value ${position.marketValue.toFixed(2)}`,
+          `${formatHoldingLabel(position.symbol, position.instrumentName)} | pnl ${position.pnlPercent.toFixed(2)}% | value ${position.marketValue.toFixed(2)}${formatPriceProvenance(position.priceProvenance)}`,
       ),
     );
   }
@@ -134,7 +144,7 @@ export const renderDashboardSection = (
       "New positions without review",
       report.unreviewedPositions.map(
         (position) =>
-          `${formatHoldingLabel(position.symbol, position.instrumentName)} | pnl ${position.pnlPercent.toFixed(2)}% | value ${position.marketValue.toFixed(2)}`,
+          `${formatHoldingLabel(position.symbol, position.instrumentName)} | pnl ${position.pnlPercent.toFixed(2)}% | value ${position.marketValue.toFixed(2)}${formatPriceProvenance(position.priceProvenance)}`,
       ),
     );
   }

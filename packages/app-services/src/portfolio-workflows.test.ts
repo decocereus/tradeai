@@ -3,11 +3,137 @@ import { Effect } from "effect";
 
 import {
   buildPortfolioSyncReport,
+  getBrokerHoldings,
   importManualPortfolioSnapshot,
 } from "./portfolio-workflows.ts";
 import { summarizePortfolioSyncReport } from "./report-formatters.ts";
 
 describe("app-services / portfolio workflows", () => {
+  it("keeps INDstocks as broker while enriching prices from Groww market data", async () => {
+    const holdings = await Effect.runPromise(
+      getBrokerHoldings(
+        {
+          accessToken: "indstocks-token",
+          marketAccessToken: "groww-token",
+        },
+        {
+          config: { marketDataProvider: "groww" },
+          brokerSources: {
+            fetchBrokerHoldings: (accessToken) => {
+              expect(accessToken).toBe("indstocks-token");
+              return Effect.succeed([
+                {
+                  broker: "indstocks",
+                  securityId: "500325",
+                  tradingSymbol: "RELIANCE-EQ",
+                  exchangeSegment: "NSE_EQ",
+                  isin: "INE002A01018",
+                  quantity: 10,
+                  averagePrice: 1300,
+                  lastTradedPrice: 1300,
+                  closePrice: 1300,
+                  marketValue: 13000,
+                  pnlAbsolute: 0,
+                  pnlPercent: 0,
+                },
+              ]);
+            },
+            fetchBrokerTradeBook: () => Effect.succeed([]),
+          },
+          marketSources: {
+            fetchNseInstrumentProfiles: () =>
+              Effect.succeed([
+                {
+                  instrumentKey: "NSE_RELIANCE",
+                  exchange: "NSE",
+                  tradingSymbol: "RELIANCE",
+                  name: "Reliance Industries Limited",
+                  instrumentType: "EQ",
+                },
+              ]),
+            fetchEquityQuotes: (symbols, accessToken) => {
+              expect(symbols).toEqual(["RELIANCE"]);
+              expect(accessToken).toBe("groww-token");
+              return Effect.succeed([
+                {
+                  instrumentKey: "NSE_RELIANCE",
+                  tradingSymbol: "RELIANCE",
+                  lastPrice: 1425,
+                  closePrice: 1400,
+                },
+              ]);
+            },
+            searchAmfiNav: () => Effect.succeed([]),
+            searchCorporateEvents: () => Effect.succeed([]),
+            fetchCorporateEvents: () => Effect.succeed([]),
+            searchEquityProfiles: () => Effect.succeed([]),
+            searchEquityInstruments: () => Effect.succeed([]),
+            buildEquityQuoteSnapshot: () => [],
+          },
+          researchSources: {} as never,
+          memorySource: {} as never,
+          repositories: {} as never,
+        },
+      ),
+    );
+
+    expect(holdings[0]?.broker).toBe("indstocks");
+    expect(holdings[0]?.instrumentName).toBe("Reliance Industries Limited");
+    expect(holdings[0]?.lastTradedPrice).toBe(1425);
+    expect(holdings[0]?.pnlAbsolute).toBe(1250);
+    expect(holdings[0]?.priceProvenance).toMatchObject({
+      status: "market_enriched",
+      source: "market",
+      marketDataProvider: "groww",
+    });
+  });
+
+  it("records price enrichment misses in sync reports", () => {
+    const current = {
+      snapshotId: "indstocks:2026-04-17T12:00:00.000Z",
+      broker: "indstocks",
+      capturedAt: "2026-04-17T12:00:00.000Z",
+      positions: [
+        {
+          symbol: "MISSING-EQ",
+          isin: "INE000000000",
+          exchangeSegment: "NSE_EQ",
+          quantity: 1,
+          averagePrice: 100,
+          lastTradedPrice: 100,
+          closePrice: 100,
+          marketValue: 100,
+          pnlAbsolute: 0,
+          pnlPercent: 0,
+          sourceBroker: "indstocks",
+          priceProvenance: {
+            status: "market_missing",
+            source: "fallback",
+            marketDataProvider: "groww",
+            quoteSymbol: "MISSING",
+          },
+        },
+      ],
+      summary: {
+        holdingsCount: 1,
+        totalMarketValue: 100,
+        totalPnlAbsolute: 0,
+        weightedPnlPercent: 0,
+      },
+    } as const;
+
+    const report = buildPortfolioSyncReport(undefined, current, 0, false, undefined, {
+      status: "unsupported",
+      message: "Groww trade-book adapter is not implemented yet.",
+    });
+
+    expect(report.broker).toBe("indstocks");
+    expect(report.priceEnrichment?.fallbackPositions).toBe(1);
+    expect(report.priceEnrichment?.missingSymbols).toEqual(["MISSING-EQ"]);
+    expect(report.tradeBook?.status).toBe("unsupported");
+    expect(summarizePortfolioSyncReport(report)).toContain("prices=groww:0 enriched/1 fallback");
+  });
+
   it("builds a portfolio sync report", () => {
     const previous = {
       snapshotId: "groww:2026-04-16T12:00:00.000Z",

@@ -68,12 +68,19 @@ export const summarizePortfolioDiff = (
 
 export const summarizePortfolioSyncReport = (report: PortfolioSyncReport) =>
   [
+    `broker=${report.broker}`,
     `snapshot=${report.currentSnapshotId}`,
     report.previousSnapshotId ? `previous=${report.previousSnapshotId}` : "previous=none",
     `positions=${report.positionsFetched}`,
     `fills=${report.tradeFillsFetched}`,
+    report.tradeBook ? `tradeBook=${report.tradeBook.status}` : undefined,
+    report.priceEnrichment
+      ? `prices=${report.priceEnrichment.marketDataProvider}:${report.priceEnrichment.enrichedPositions} enriched/${report.priceEnrichment.fallbackPositions} fallback`
+      : undefined,
     `persisted=${report.persisted}`,
-  ].join(" | ");
+  ]
+    .filter((part): part is string => Boolean(part))
+    .join(" | ");
 
 export const summarizeHoldingsReview = (report: BrokerPortfolioReviewReport) =>
   [
@@ -109,6 +116,9 @@ export const summarizePortfolioDashboardReport = (report: PortfolioDashboardRepo
     report.latestDiff
       ? `snapshotChanges=${report.latestDiff.newPositions + report.latestDiff.exitedPositions + report.latestDiff.changedPositions}`
       : "snapshotChanges=0",
+    report.latestSnapshot
+      ? `priceFallbacks=${report.latestSnapshot.positions.filter((position) => position.priceProvenance?.source === "fallback").length}`
+      : "priceFallbacks=0",
     report.latestReview
       ? `partialResearch=${report.latestReview.reviews.filter((review) => review.researchQuality?.completeness !== "complete").length}`
       : "partialResearch=0",

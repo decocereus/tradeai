@@ -48,6 +48,7 @@ const toPortfolioHoldingSnapshotSummary = (
   pnlAbsolute: position.pnlAbsolute,
   pnlPercent: position.pnlPercent,
   quantity: position.quantity,
+  ...(position.priceProvenance ? { priceProvenance: position.priceProvenance } : {}),
 });
 
 export const buildPortfolioHoldingLeaders = (

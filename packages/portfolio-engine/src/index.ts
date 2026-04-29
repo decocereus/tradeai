@@ -57,6 +57,7 @@ export const normalizeBrokerHoldings = (
     pnlAbsolute: holding.pnlAbsolute,
     pnlPercent: holding.pnlPercent,
     sourceBroker: holding.broker,
+    ...(holding.priceProvenance ? { priceProvenance: holding.priceProvenance } : {}),
   }));
 
 export const summarizePortfolioPositions = (

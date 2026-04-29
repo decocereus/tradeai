@@ -8,6 +8,7 @@ TradeAI is no longer just a design exercise. It is now a working private investi
 - local Postgres persistence
 - a terminal operator UI
 - live INDstocks holdings sync
+- Groww market quote enrichment for broker-held stocks
 - persisted portfolio snapshots and review history
 - deterministic recommendation logic
 - a Pi-based harness path for future chat/operator experiences
@@ -16,12 +17,16 @@ TradeAI is no longer just a design exercise. It is now a working private investi
 
 ### Live broker data
 
-The system can now use a real `INDSTOCKS_ACCESS_TOKEN` to fetch:
+The system can now use a real `INDSTOCKS_ACCESS_TOKEN` to fetch broker/account data:
 
 - live holdings from `/portfolio/holdings`
 - live trade-book data from `/trade-book`
-- live market quotes from `/market/quotes/full`
 - live historical candles from `/market/historical/{interval}`
+
+It uses Groww as the market-data provider for general NSE instruments and quote enrichment:
+
+- `TRADEAI_MARKET_DATA_PROVIDER=groww`
+- `GROWW_ACCESS_TOKEN`, or `GROWW_API_KEY` plus `GROWW_API_SECRET`
 
 Important nuance:
 
@@ -39,6 +44,8 @@ These flows are live and backed by the real INDstocks account:
 - `--portfolio-decision`
 - `--dashboard --dashboard-broker indstocks`
 - `--holding-history <SYMBOL> --holding-history-broker indstocks`
+
+Portfolio snapshots preserve `sourceBroker: "indstocks"` while carrying per-position price provenance. If Groww quote enrichment misses a symbol, reports mark that holding as a price fallback instead of hiding it.
 
 ### Persistence
 
@@ -61,7 +68,7 @@ The system currently combines:
 
 For INDstocks-held positions specifically, the live review flow now uses:
 
-- INDstocks quotes
+- Groww live quotes for portfolio price enrichment
 - INDstocks historical data
 - public fundamentals
 - public events
@@ -109,8 +116,8 @@ bun run dev:tui -- --pi "Summarize the current portfolio state."
 
 - INDstocks holdings
 - INDstocks trade-book
-- INDstocks market quotes
 - INDstocks historical candles
+- Groww market quotes
 - public BSE events
 - public fundamentals pages
 
@@ -139,7 +146,11 @@ The system has Pi wiring and a TUI harness path, but the main experience is stil
 
 ### Research is still mixed-source
 
-The live broker-held review path uses INDstocks market data, but the broader general query research flow is not fully migrated to INDstocks yet.
+The live broker-held review path uses INDstocks for portfolio identity/history and Groww for quote enrichment. Broader research still combines Aftermarkets/public sources.
+
+### Groww trade-book/history is explicitly unsupported
+
+Groww is currently treated as market data, not the primary broker ledger. Sync reports mark Groww trade-book/history as unsupported rather than pretending that fills exist.
 
 ### Review sections are only partially name-enriched
 
@@ -147,6 +158,6 @@ Position-based dashboard sections show company/instrument names, but review reco
 
 ## What We Should Build Next
 
-1. Finish migrating general research/search flows to INDstocks market data.
+1. Improve the mixed-source research contract around Aftermarkets plus broker-held positions.
 2. Build the real chat/operator console on top of Pi so commands are no longer the main interaction style.
 3. Carry display names all the way through review records and history surfaces.

@@ -53,6 +53,7 @@ describe("app-services / workflow service", () => {
     const tradeAi = createTradeAiWorkflowService({
       config: {
         brokerAccessToken: "runtime-token",
+        growwAccessToken: "groww-token",
         databaseUrl: "postgresql://runtime-db",
         persistPortfolioSnapshots: false,
       },
@@ -68,6 +69,10 @@ describe("app-services / workflow service", () => {
       },
       marketSources: {
         fetchNseInstrumentProfiles: () => Effect.succeed([]),
+        fetchEquityQuotes: (symbols, accessToken) => {
+          calls.push(`market-quotes:${symbols.join(",")}:${accessToken}`);
+          return Effect.succeed([]);
+        },
       },
       repositories: {
         hasConfiguredDatabaseUrl: (databaseUrl) => databaseUrl === "postgresql://runtime-db",
@@ -92,6 +97,7 @@ describe("app-services / workflow service", () => {
     expect(report.persisted).toBe(false);
     expect(calls).toEqual([
       "holdings:runtime-token",
+      "market-quotes:RELIANCE:groww-token",
       "trade-book:runtime-token",
       "latest:postgresql://runtime-db",
     ]);

@@ -13,13 +13,13 @@ const readEnvValue = (name: string): string | undefined => {
 const buildLiveService = () =>
   createTradeAiWorkflowService({
     config: {
+      brokerDataProvider: "indstocks",
       marketDataProvider: "groww",
       ...(readEnvValue("INDSTOCKS_ACCESS_TOKEN")
         ? { brokerAccessToken: readEnvValue("INDSTOCKS_ACCESS_TOKEN") }
         : {}),
       ...(readEnvValue("GROWW_ACCESS_TOKEN")
         ? {
-            brokerDataProvider: "groww",
             growwAccessToken: readEnvValue("GROWW_ACCESS_TOKEN"),
             marketAccessToken: readEnvValue("GROWW_ACCESS_TOKEN"),
           }
@@ -41,8 +41,8 @@ const hasGrowwAuthEnv = () =>
 
 describe("integration / workflow service live adapters", () => {
   it("fetches live broker holdings through the service boundary", async () => {
-    if (!hasGrowwAuthEnv()) {
-      console.log(skipReason(["GROWW_ACCESS_TOKEN or GROWW_API_KEY/GROWW_API_SECRET"]));
+    if (!hasRequiredEnv(["INDSTOCKS_ACCESS_TOKEN"]) || !hasGrowwAuthEnv()) {
+      console.log(skipReason(["INDSTOCKS_ACCESS_TOKEN", "GROWW_ACCESS_TOKEN or GROWW_API_KEY/GROWW_API_SECRET"]));
       return;
     }
 
@@ -50,7 +50,7 @@ describe("integration / workflow service live adapters", () => {
     const holdings = await Effect.runPromise(tradeAi.getBrokerHoldings());
 
     expect(Array.isArray(holdings)).toBe(true);
-    expect(holdings.every((holding) => holding.broker === "groww")).toBe(true);
+    expect(holdings.every((holding) => holding.broker === "indstocks")).toBe(true);
   });
 
   it("fetches live market quotes through the service boundary", async () => {

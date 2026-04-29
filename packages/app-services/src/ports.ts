@@ -161,13 +161,18 @@ export interface CreateTradeAiWorkflowServiceOptions {
 }
 
 export const defaultTradeAiBrokerSources: TradeAiBrokerSources = {
-  fetchBrokerHoldings: fetchGrowwHoldings,
-  fetchBrokerTradeBook: fetchGrowwTradeBook,
+  fetchBrokerHoldings: fetchIndstocksHoldings,
+  fetchBrokerTradeBook: fetchIndstocksTradeBook,
 };
 
 export const indstocksTradeAiBrokerSources: TradeAiBrokerSources = {
   fetchBrokerHoldings: fetchIndstocksHoldings,
   fetchBrokerTradeBook: fetchIndstocksTradeBook,
+};
+
+export const growwTradeAiBrokerSources: TradeAiBrokerSources = {
+  fetchBrokerHoldings: fetchGrowwHoldings,
+  fetchBrokerTradeBook: fetchGrowwTradeBook,
 };
 
 export const defaultTradeAiMarketSources: TradeAiMarketSources = {
@@ -229,9 +234,11 @@ export const createTradeAiWorkflowDependencies = (
 ): TradeAiWorkflowDependencies => ({
   config: options.config ?? {},
   brokerSources: {
-    ...(options.config?.brokerDataProvider === "indstocks"
-      ? indstocksTradeAiBrokerSources
-      : defaultTradeAiBrokerSources),
+    ...(options.config?.brokerDataProvider === "groww"
+      ? growwTradeAiBrokerSources
+      : options.config?.brokerDataProvider === "indstocks"
+        ? indstocksTradeAiBrokerSources
+        : defaultTradeAiBrokerSources),
     ...options.brokerSources,
   },
   marketSources: {
