@@ -86,7 +86,12 @@ export const fetchTrueDataQuoteSnapshot = (
   Effect.tryPromise({
     try: async () => {
       const { userId, password } = resolveTrueDataCredentials(input);
-      await client.auth(userId, password);
+      const authenticated = await client.auth(userId, password, true);
+      if (authenticated !== true) {
+        throw new Error(
+          "TrueData authentication failed. Check TRUEDATA_USER_ID, TRUEDATA_PASSWORD, and whether the subscription includes historical REST access.",
+        );
+      }
 
       const quotes = await Promise.all(
         input.symbols.map(async (symbol) => {
@@ -99,4 +104,3 @@ export const fetchTrueDataQuoteSnapshot = (
     },
     catch: (error) => (error instanceof Error ? error : new Error(String(error))),
   });
-

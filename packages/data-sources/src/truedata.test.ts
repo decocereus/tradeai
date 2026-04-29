@@ -81,5 +81,25 @@ describe("data-sources / truedata", () => {
       },
     ]);
   });
-});
 
+  it("fails fast when authentication is rejected", async () => {
+    await expect(
+      Effect.runPromise(
+        fetchTrueDataQuoteSnapshot(
+          {
+            symbols: ["RELIANCE"],
+            userId: "user",
+            password: "password",
+          },
+          {
+            auth: async () => undefined,
+            getLTP: async () => ({
+              status: "unexpected",
+              Records: [{ symbol: "RELIANCE", ltp: 2500 }],
+            }),
+          },
+        ),
+      ),
+    ).rejects.toThrow("TrueData authentication failed");
+  });
+});
