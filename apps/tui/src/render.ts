@@ -1,10 +1,16 @@
-import type { PortfolioDashboardReport } from "@tradeai/domain";
+import type {
+  DailyOperatorReport,
+  PortfolioDashboardReport,
+  ProviderHealthReport,
+} from "@tradeai/domain";
 import {
+  summarizeDailyOperatorReport,
   summarizeHoldingReviewTrendReport,
   summarizeHoldingsReview,
   summarizePortfolioDashboardReport,
   summarizePortfolioDiff,
   summarizePortfolioSummary,
+  summarizeProviderHealthReport,
 } from "@tradeai/app-services";
 
 const formatReviewQuality = (quality: PortfolioDashboardReport["topConflicts"][number]["researchQuality"]) =>
@@ -169,5 +175,53 @@ export const renderDashboardSection = (
       "bun run dev:tui -- --holding-history RELIANCE-EQ --holding-history-broker manual_csv",
       "bun run dev:tui -- --dashboard",
     ]);
+  }
+};
+
+export const renderProviderHealthSection = (report: ProviderHealthReport) => {
+  console.log(summarizeProviderHealthReport(report));
+  renderList(
+    "Provider checks",
+    report.checks.map((check) =>
+      [
+        `${check.name} | ${check.provider} | ${check.status}`,
+        check.message,
+        check.action ? `action: ${check.action}` : undefined,
+      ]
+        .filter((part): part is string => Boolean(part))
+        .join(" | "),
+    ),
+  );
+};
+
+export const renderDailyOperatorReport = (report: DailyOperatorReport) => {
+  console.log(summarizeDailyOperatorReport(report));
+  renderDivider("Provider Health");
+  renderProviderHealthSection(report.health);
+
+  if (report.actionItems.length > 0) {
+    renderList(
+      "Operator actions",
+      report.actionItems.map((action) => `[${action.priority}] ${action.title} | ${action.detail}`),
+    );
+  }
+
+  if (report.decision) {
+    renderDivider("Portfolio Decision");
+    console.log(summarizePortfolioDiff(
+      report.decision.sync.diff.newPositions,
+      report.decision.sync.diff.exitedPositions,
+      report.decision.sync.diff.changedPositions,
+      report.decision.sync.diff.unchangedPositions,
+    ));
+    console.log(summarizeHoldingsReview(report.decision.review));
+    for (const review of report.decision.review.reviews.slice(0, 10)) {
+      console.log(`- ${review.symbol} | ${review.status} | ${review.reason}`);
+    }
+  }
+
+  if (report.dashboard) {
+    renderDivider("Portfolio Dashboard");
+    renderDashboardSection(report.dashboard);
   }
 };

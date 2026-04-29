@@ -19,7 +19,13 @@ import {
 } from "@tradeai/app-services";
 import { Effect } from "effect";
 import { parseTuiCliOptions } from "./cli-options.ts";
-import { renderDashboardSection, renderDivider, renderList } from "./render.ts";
+import {
+  renderDailyOperatorReport,
+  renderDashboardSection,
+  renderDivider,
+  renderList,
+  renderProviderHealthSection,
+} from "./render.ts";
 
 const {
   piPrompt,
@@ -35,6 +41,8 @@ const {
   syncPortfolioFlag,
   reviewHoldingsFlag,
   portfolioDecisionFlag,
+  providerHealthFlag,
+  dailyFlag,
   dashboardFlag,
   dashboardBroker,
   holdingHistorySymbol,
@@ -119,6 +127,32 @@ const main = Effect.gen(function* () {
       console.log("Auto mode: showing the latest persisted portfolio dashboard.");
       renderDashboardSection(report, { autoHome: true });
     }
+    return;
+  }
+
+  if (dailyFlag) {
+    console.log("TradeAI Daily Operator Report");
+    console.log("=============================");
+    const report = yield* tradeAi.getDailyOperatorReport().pipe(
+      Effect.catchAll((error) => {
+        console.log(error instanceof Error ? error.message : String(error));
+        return Effect.succeed(undefined);
+      }),
+    );
+
+    if (!report) {
+      console.log("No daily operator report was produced.");
+    } else {
+      renderDailyOperatorReport(report);
+    }
+    return;
+  }
+
+  if (providerHealthFlag) {
+    console.log("TradeAI Provider Health");
+    console.log("=======================");
+    const report = yield* tradeAi.getProviderHealth();
+    renderProviderHealthSection(report);
     return;
   }
 
@@ -501,6 +535,9 @@ const main = Effect.gen(function* () {
   } else {
     console.log("Hint: run with `--portfolio-decision` to sync, review, and summarize your live holdings.");
   }
+
+  console.log("Hint: run with `--provider-health` to check broker, market, NAV, research, and database providers.");
+  console.log("Hint: run with `--daily` to run provider health, live portfolio decisioning, and dashboard output.");
 
   if (shouldRenderDashboard) {
     renderDivider("Portfolio Dashboard");

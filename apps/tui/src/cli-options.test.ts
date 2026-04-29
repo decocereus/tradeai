@@ -39,4 +39,12 @@ describe("tui cli options", () => {
     expect(options.equitySearchQuery).toBe("RELIANCE");
     expect(options.quoteKeys).toEqual(["RELIANCE", "TCS"]);
   });
+
+  it("parses operator flags as explicit actions", () => {
+    const options = parseTuiCliOptions(["--provider-health", "--daily"]);
+
+    expect(options.providerHealthFlag).toBe(true);
+    expect(options.dailyFlag).toBe(true);
+    expect(options.hasExplicitPrimaryAction).toBe(true);
+  });
 });

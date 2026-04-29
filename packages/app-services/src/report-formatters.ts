@@ -2,9 +2,11 @@ import type {
   BrokerPortfolioDecisionReport,
   BrokerPortfolioReviewReport,
   DailyResearchResult,
+  DailyOperatorReport,
   HoldingReviewTrend,
   PortfolioDashboardReport,
   PortfolioSyncReport,
+  ProviderHealthReport,
 } from "@tradeai/domain";
 
 export const summarizeDailyResearch = (result: DailyResearchResult) =>
@@ -131,4 +133,19 @@ export const summarizePortfolioDashboardReport = (report: PortfolioDashboardRepo
     `unreviewedPositions=${report.unreviewedPositions.length}`,
     `streakLeaders=${report.streakLeaders.length}`,
     `todaysActions=${report.todaysActions.length}`,
+  ].join(" | ");
+
+export const summarizeProviderHealthReport = (report: ProviderHealthReport) =>
+  [
+    `status=${report.status}`,
+    ...report.checks.map((check) => `${check.name}:${check.provider}:${check.status}`),
+  ].join(" | ");
+
+export const summarizeDailyOperatorReport = (report: DailyOperatorReport) =>
+  [
+    `generatedAt=${report.generatedAt}`,
+    summarizeProviderHealthReport(report.health),
+    report.decision ? "decision=available" : "decision=skipped",
+    report.dashboard ? "dashboard=available" : "dashboard=skipped",
+    `actions=${report.actionItems.length}`,
   ].join(" | ");

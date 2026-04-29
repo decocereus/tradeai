@@ -47,7 +47,23 @@ bun run db:push
 
 ## Recommended Test Order
 
-### 1. Confirm live holdings
+### 1. Check provider health
+
+```bash
+bun run dev:tui -- --provider-health
+```
+
+This checks INDstocks, Groww, AMFI NAV, Aftermarkets research, and local database readiness without printing secret values.
+
+### 2. Run the daily operator report
+
+```bash
+bun run dev:tui -- --daily
+```
+
+This runs provider health, syncs and reviews the live INDstocks portfolio, and prints the current dashboard/action list. If a required provider is down, it stops before portfolio decisioning and tells you what token/provider needs attention.
+
+### 3. Confirm live holdings
 
 ```bash
 bun run dev:tui -- --holdings
@@ -60,7 +76,7 @@ You should see:
 - Groww-enriched prices where quote lookup succeeds
 - explicit price fallback markers where quote lookup misses or is unavailable
 
-### 2. Persist a fresh broker snapshot
+### 4. Persist a fresh broker snapshot
 
 ```bash
 bun run dev:tui -- --sync-portfolio
@@ -72,7 +88,7 @@ This should:
 - persist a new snapshot
 - compare against the last snapshot
 
-### 3. Run live portfolio review
+### 5. Run live portfolio review
 
 ```bash
 bun run dev:tui -- --portfolio-decision
@@ -84,13 +100,13 @@ This should:
 - run the current review logic
 - persist review history
 
-### 4. Inspect the dashboard
+### 6. Inspect the dashboard
 
 ```bash
 bun run dev:tui -- --dashboard --dashboard-broker indstocks
 ```
 
-### 5. Inspect one holding over time
+### 7. Inspect one holding over time
 
 ```bash
 bun run dev:tui -- --holding-history NIFTYBEES --holding-history-broker indstocks
@@ -102,6 +118,13 @@ bun run dev:tui -- --holding-history NIFTYBEES --holding-history-broker indstock
 
 ```bash
 bun run dev:tui
+```
+
+### Daily operator commands
+
+```bash
+bun run dev:tui -- --provider-health
+bun run dev:tui -- --daily
 ```
 
 ### Broker-focused commands

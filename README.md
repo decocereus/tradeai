@@ -10,6 +10,8 @@ Best starting docs right now:
 Current scaffold commands:
 
 - `bun run dev:tui`
+- `bun run dev:tui -- --provider-health`
+- `bun run dev:tui -- --daily`
 - `bun run dev:api`
 - `bun run dev:tui -- --dashboard`
 - `bun run dev:tui -- --manual-decision --import-holdings /path/to/holdings.csv --import-trades /path/to/trades.csv`

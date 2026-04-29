@@ -14,6 +14,8 @@ export interface TuiCliOptions {
   syncPortfolioFlag: boolean;
   reviewHoldingsFlag: boolean;
   portfolioDecisionFlag: boolean;
+  providerHealthFlag: boolean;
+  dailyFlag: boolean;
   dashboardFlag: boolean;
   dashboardBroker: BrokerSource | undefined;
   holdingHistorySymbol: string | undefined;
@@ -74,6 +76,8 @@ export const parseTuiCliOptions = (args: readonly string[]): TuiCliOptions => {
   const syncPortfolioFlag = args.includes("--sync-portfolio");
   const reviewHoldingsFlag = args.includes("--review-holdings");
   const portfolioDecisionFlag = args.includes("--portfolio-decision");
+  const providerHealthFlag = args.includes("--provider-health");
+  const dailyFlag = args.includes("--daily");
   const dashboardFlag = args.includes("--dashboard");
   const manualDecisionFlag = args.includes("--manual-decision");
   const dashboardBroker = parseBrokerSource(readNextValue(args, "--dashboard-broker", ""));
@@ -95,6 +99,8 @@ export const parseTuiCliOptions = (args: readonly string[]): TuiCliOptions => {
     syncPortfolioFlag ||
     reviewHoldingsFlag ||
     portfolioDecisionFlag ||
+    providerHealthFlag ||
+    dailyFlag ||
     Boolean(holdingHistorySymbol) ||
     Boolean(importHoldingsPath) ||
     manualDecisionFlag;
@@ -113,6 +119,8 @@ export const parseTuiCliOptions = (args: readonly string[]): TuiCliOptions => {
     syncPortfolioFlag,
     reviewHoldingsFlag,
     portfolioDecisionFlag,
+    providerHealthFlag,
+    dailyFlag,
     dashboardFlag,
     dashboardBroker,
     holdingHistorySymbol,

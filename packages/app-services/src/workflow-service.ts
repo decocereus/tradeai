@@ -37,6 +37,12 @@ import {
 } from "./review-workflows.ts";
 import { getPortfolioDashboard } from "./dashboard-workflows.ts";
 import {
+  getDailyOperatorReport,
+  getProviderHealth,
+  type DailyOperatorInput,
+  type ProviderHealthInput,
+} from "./operator-workflows.ts";
+import {
   createTradeAiWorkflowDependencies,
   type CreateTradeAiWorkflowServiceOptions,
   type TradeAiRuntimeConfig,
@@ -58,6 +64,23 @@ export interface HoldingReviewTrendInput {
   broker?: BrokerSource;
   databaseUrl?: string;
 }
+
+const mergeProviderHealthInput = (
+  config: TradeAiRuntimeConfig,
+  input: ProviderHealthInput = {},
+): ProviderHealthInput => ({
+  ...(config.brokerAccessToken ?? config.accessToken
+    ? { brokerAccessToken: config.brokerAccessToken ?? config.accessToken }
+    : {}),
+  ...(config.growwAccessToken ?? config.marketAccessToken ?? config.accessToken
+    ? {
+        marketAccessToken:
+          config.growwAccessToken ?? config.marketAccessToken ?? config.accessToken,
+      }
+    : {}),
+  ...(config.databaseUrl ? { databaseUrl: config.databaseUrl } : {}),
+  ...input,
+});
 
 const mergeBrokerPortfolioInput = (
   config: TradeAiRuntimeConfig,
@@ -130,6 +153,18 @@ const mergeBrokerPortfolioReviewInput = (
     ...input.options,
   },
 });
+
+const mergeDailyOperatorInput = (
+  config: TradeAiRuntimeConfig,
+  dependencies: TradeAiWorkflowDependencies,
+  input: DailyOperatorInput = {},
+): DailyOperatorInput => {
+  const merged = mergeBrokerPortfolioReviewInput(config, dependencies, input);
+  return {
+    ...merged,
+    health: mergeProviderHealthInput(config, input.health ?? input),
+  };
+};
 
 const mergeManualPortfolioDecisionInput = (
   config: TradeAiRuntimeConfig,
@@ -207,6 +242,13 @@ export const createTradeAiWorkflowService = (
       canPersistPortfolioMemory(mergeBrokerPortfolioInput(config, input).databaseUrl, dependencies),
 
     runDemoResearchSnapshot: () => runDemoResearchSnapshotWithDependencies(dependencies),
+    getProviderHealth: (input: ProviderHealthInput = {}) =>
+      getProviderHealth(mergeProviderHealthInput(config, input), dependencies),
+    getDailyOperatorReport: (input: DailyOperatorInput = {}) =>
+      getDailyOperatorReport(
+        mergeDailyOperatorInput(config, dependencies, input),
+        dependencies,
+      ),
     runEquityResearch: (input: EquityResearchInput) =>
       runEquityResearch(
         {

@@ -239,4 +239,101 @@ describe("app-services / workflow service", () => {
 
     expect(result.researchQuality.source).toBe("aftermarkets");
   });
+
+  it("reports provider health without leaking tokens", async () => {
+    const holding: BrokerHolding = {
+      broker: "indstocks",
+      securityId: "500325",
+      tradingSymbol: "RELIANCE-EQ",
+      exchangeSegment: "NSE_EQ",
+      isin: "INE002A01018",
+      quantity: 1,
+      averagePrice: 2400,
+      lastTradedPrice: 2500,
+      closePrice: 2490,
+      marketValue: 2500,
+      pnlAbsolute: 100,
+      pnlPercent: 4.17,
+    };
+    const tradeAi = createTradeAiWorkflowService({
+      config: {
+        brokerDataProvider: "indstocks",
+        marketDataProvider: "groww",
+        researchDataProvider: "aftermarkets",
+        brokerAccessToken: "secret-broker-token",
+        growwAccessToken: "secret-groww-token",
+        databaseUrl: "postgresql://runtime-db",
+      },
+      brokerSources: {
+        fetchBrokerHoldings: () => Effect.succeed([holding]),
+      },
+      marketSources: {
+        fetchEquityQuotes: () =>
+          Effect.succeed([
+            {
+              instrumentKey: "RELIANCE",
+              tradingSymbol: "RELIANCE",
+              lastPrice: 2500,
+            },
+          ]),
+        searchAmfiNav: () =>
+          Effect.succeed([
+            {
+              schemeCode: "123",
+              isinDivPayoutOrGrowth: "INF194KB1AL4",
+              isinDivReinvestment: "",
+              schemeName: "Bandhan Small Cap Fund",
+              netAssetValue: "10.5",
+              date: "29-Apr-2026",
+            },
+          ]),
+      },
+      researchSources: {
+        buildEquityResearchPacket: () =>
+          Effect.succeed({
+            ...customResearchPacket,
+            source: "aftermarkets",
+          }),
+      },
+      repositories: {
+        hasConfiguredDatabaseUrl: (databaseUrl) => databaseUrl === "postgresql://runtime-db",
+      },
+    });
+
+    const report = await Effect.runPromise(tradeAi.getProviderHealth());
+    const serialized = JSON.stringify(report);
+
+    expect(report.status).toBe("ok");
+    expect(report.checks.map((check) => check.status)).toEqual([
+      "ok",
+      "ok",
+      "ok",
+      "ok",
+      "ok",
+    ]);
+    expect(serialized).not.toContain("secret-broker-token");
+    expect(serialized).not.toContain("secret-groww-token");
+  });
+
+  it("daily operator report stops before portfolio decisioning when required providers fail", async () => {
+    const tradeAi = createTradeAiWorkflowService({
+      brokerSources: {
+        fetchBrokerHoldings: () => Effect.fail(new Error("expired indstocks token")),
+      },
+      marketSources: {
+        fetchEquityQuotes: () => Effect.succeed([]),
+        searchAmfiNav: () => Effect.succeed([]),
+      },
+      researchSources: {
+        buildEquityResearchPacket: () => Effect.succeed(customResearchPacket),
+      },
+    });
+
+    const report = await Effect.runPromise(tradeAi.getDailyOperatorReport());
+
+    expect(report.health.status).toBe("failed");
+    expect(report.decision).toBeUndefined();
+    expect(report.dashboard).toBeUndefined();
+    expect(report.actionItems[0]?.detail).toContain("INDstocks token");
+  });
 });

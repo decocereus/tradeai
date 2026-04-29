@@ -516,6 +516,44 @@ export const PortfolioDashboardReport = Schema.Struct({
 });
 export type PortfolioDashboardReport = Schema.Schema.Type<typeof PortfolioDashboardReport>;
 
+export const ProviderHealthName = Schema.Literal(
+  "broker",
+  "market",
+  "mutual_fund_nav",
+  "research",
+  "database",
+);
+export type ProviderHealthName = Schema.Schema.Type<typeof ProviderHealthName>;
+
+export const ProviderHealthStatus = Schema.Literal("ok", "degraded", "failed", "skipped");
+export type ProviderHealthStatus = Schema.Schema.Type<typeof ProviderHealthStatus>;
+
+export const ProviderHealthCheck = Schema.Struct({
+  name: ProviderHealthName,
+  provider: Schema.String,
+  status: ProviderHealthStatus,
+  checkedAt: Schema.String,
+  message: Schema.String,
+  action: Schema.optional(Schema.String),
+});
+export type ProviderHealthCheck = Schema.Schema.Type<typeof ProviderHealthCheck>;
+
+export const ProviderHealthReport = Schema.Struct({
+  checkedAt: Schema.String,
+  status: ProviderHealthStatus,
+  checks: Schema.Array(ProviderHealthCheck),
+});
+export type ProviderHealthReport = Schema.Schema.Type<typeof ProviderHealthReport>;
+
+export const DailyOperatorReport = Schema.Struct({
+  generatedAt: Schema.String,
+  health: ProviderHealthReport,
+  decision: Schema.optional(BrokerPortfolioDecisionReport),
+  dashboard: Schema.optional(PortfolioDashboardReport),
+  actionItems: Schema.Array(TodayActionItem),
+});
+export type DailyOperatorReport = Schema.Schema.Type<typeof DailyOperatorReport>;
+
 export const HistoricalCandle = Schema.Struct({
   timestamp: Schema.String,
   open: Schema.Number,
