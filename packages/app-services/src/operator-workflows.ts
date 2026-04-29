@@ -1,5 +1,8 @@
 import type {
   DailyOperatorReport,
+  HoldingResearchReview,
+  PortfolioAssetAllocation,
+  PortfolioHoldingSnapshotSummary,
   ProviderHealthCheck,
   ProviderHealthReport,
   ProviderHealthStatus,
@@ -20,6 +23,35 @@ export interface ProviderHealthInput {
 
 export interface DailyOperatorInput extends BrokerPortfolioReviewInput {
   health?: ProviderHealthInput;
+}
+
+export interface DailyOperatorViewModel {
+  generatedAt: string;
+  providerHealth: {
+    status: ProviderHealthStatus;
+    checkedAt: string;
+    checks: readonly ProviderHealthCheck[];
+  };
+  portfolio: {
+    broker: string | undefined;
+    snapshotId: string | undefined;
+    capturedAt: string | undefined;
+    holdingsCount: number;
+    marketValue: number;
+    weightedPnlPercent: number;
+    priceFallbacks: number;
+    partialResearch: number;
+  };
+  assetAllocation: readonly PortfolioAssetAllocation[];
+  actionItems: readonly TodayActionItem[];
+  conflicts: readonly HoldingResearchReview[];
+  reviewCandidates: readonly HoldingResearchReview[];
+  holdings: readonly PortfolioHoldingSnapshotSummary[];
+  dataQuality: {
+    missingOrFallbackPrices: readonly PortfolioHoldingSnapshotSummary[];
+    incompleteResearch: readonly HoldingResearchReview[];
+    providerIssues: readonly ProviderHealthCheck[];
+  };
 }
 
 const nowIso = () => new Date().toISOString();
@@ -187,3 +219,60 @@ export const getDailyOperatorReport = (
       actionItems,
     };
   });
+
+export const buildDailyOperatorViewModel = (
+  report: DailyOperatorReport,
+): DailyOperatorViewModel => {
+  const snapshot = report.dashboard?.latestSnapshot;
+  const latestReview = report.dashboard?.latestReview;
+  const dashboardHoldings = [
+    ...(report.dashboard?.topWinners ?? []),
+    ...(report.dashboard?.unreviewedPositions ?? []),
+  ];
+  const holdingsBySymbol = new Map(
+    dashboardHoldings.map((holding) => [holding.symbol, holding]),
+  );
+  const holdings = [...holdingsBySymbol.values()];
+  const missingOrFallbackPrices = holdings.filter(
+    (holding) => holding.priceProvenance?.source === "fallback",
+  );
+  const incompleteResearch = latestReview?.reviews.filter(
+    (review) => review.researchQuality?.completeness !== "complete",
+  ) ?? [];
+  const providerIssues = report.health.checks.filter((check) => check.status !== "ok");
+
+  return {
+    generatedAt: report.generatedAt,
+    providerHealth: {
+      status: report.health.status,
+      checkedAt: report.health.checkedAt,
+      checks: report.health.checks,
+    },
+    portfolio: {
+      broker: report.dashboard?.broker ?? report.decision?.sync.broker,
+      snapshotId: snapshot?.snapshotId ?? report.decision?.sync.currentSnapshotId,
+      capturedAt: snapshot?.capturedAt,
+      holdingsCount:
+        snapshot?.summary.holdingsCount ?? report.decision?.sync.positionsFetched ?? 0,
+      marketValue: snapshot?.summary.totalMarketValue ?? 0,
+      weightedPnlPercent: snapshot?.summary.weightedPnlPercent ?? 0,
+      priceFallbacks:
+        snapshot?.positions.filter((position) => position.priceProvenance?.source === "fallback")
+          .length ?? 0,
+      partialResearch: incompleteResearch.length,
+    },
+    assetAllocation: report.dashboard?.assetAllocation ?? [],
+    actionItems: [
+      ...report.actionItems,
+      ...(report.dashboard?.todaysActions ?? []),
+    ],
+    conflicts: report.dashboard?.topConflicts ?? [],
+    reviewCandidates: report.dashboard?.topReviewCandidates ?? [],
+    holdings,
+    dataQuality: {
+      missingOrFallbackPrices,
+      incompleteResearch,
+      providerIssues,
+    },
+  };
+};

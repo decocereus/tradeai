@@ -14,6 +14,7 @@ Current scaffold commands:
 - `bun run dev:tui -- --provider-health --json`
 - `bun run dev:tui -- --daily`
 - `bun run dev:tui -- --daily --json`
+- `bun run dev:tui -- --daily --json --raw`
 - `bun run dev:api`
 - `bun run dev:tui -- --dashboard`
 - `bun run dev:tui -- --manual-decision --import-holdings /path/to/holdings.csv --import-trades /path/to/trades.csv`

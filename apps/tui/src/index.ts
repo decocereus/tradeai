@@ -51,6 +51,7 @@ const {
   importTradesPath,
   manualDecisionFlag,
   jsonFlag,
+  rawFlag,
   hasExplicitPrimaryAction,
 } = parseTuiCliOptions(process.argv.slice(2));
 
@@ -192,12 +193,19 @@ const main = Effect.gen(function* () {
 
   if (dailyFlag) {
     if (jsonFlag) {
-      const report = yield* tradeAi.getDailyOperatorReport().pipe(
-        Effect.catchAll((error) => {
-          writeJsonError("daily", error);
-          return Effect.succeed(undefined);
-        }),
-      );
+      const report = rawFlag
+        ? yield* tradeAi.getDailyOperatorReport().pipe(
+            Effect.catchAll((error) => {
+              writeJsonError("daily", error);
+              return Effect.succeed(undefined);
+            }),
+          )
+        : yield* tradeAi.getDailyOperatorViewModel().pipe(
+            Effect.catchAll((error) => {
+              writeJsonError("daily", error);
+              return Effect.succeed(undefined);
+            }),
+          );
       if (report) writeJsonData("daily", report);
       return;
     }

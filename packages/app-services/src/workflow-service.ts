@@ -1,4 +1,5 @@
 import type { BrokerSource } from "@tradeai/domain";
+import { Effect } from "effect";
 
 import {
   getEquityQuoteSnapshots,
@@ -37,6 +38,7 @@ import {
 } from "./review-workflows.ts";
 import { getPortfolioDashboard } from "./dashboard-workflows.ts";
 import {
+  buildDailyOperatorViewModel,
   getDailyOperatorReport,
   getProviderHealth,
   type DailyOperatorInput,
@@ -249,6 +251,11 @@ export const createTradeAiWorkflowService = (
         mergeDailyOperatorInput(config, dependencies, input),
         dependencies,
       ),
+    getDailyOperatorViewModel: (input: DailyOperatorInput = {}) =>
+      getDailyOperatorReport(
+        mergeDailyOperatorInput(config, dependencies, input),
+        dependencies,
+      ).pipe(Effect.map(buildDailyOperatorViewModel)),
     runEquityResearch: (input: EquityResearchInput) =>
       runEquityResearch(
         {

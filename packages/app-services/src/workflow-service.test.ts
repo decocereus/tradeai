@@ -336,4 +336,37 @@ describe("app-services / workflow service", () => {
     expect(report.dashboard).toBeUndefined();
     expect(report.actionItems[0]?.detail).toContain("INDstocks token");
   });
+
+  it("exposes a UI-ready daily operator view model", async () => {
+    const tradeAi = createTradeAiWorkflowService({
+      brokerSources: {
+        fetchBrokerHoldings: () => Effect.fail(new Error("expired indstocks token")),
+      },
+      marketSources: {
+        fetchEquityQuotes: () => Effect.succeed([]),
+        searchAmfiNav: () => Effect.succeed([]),
+      },
+      researchSources: {
+        buildEquityResearchPacket: () => Effect.succeed(customResearchPacket),
+      },
+    });
+
+    const viewModel = await Effect.runPromise(tradeAi.getDailyOperatorViewModel());
+
+    expect(viewModel.providerHealth.status).toBe("failed");
+    expect(viewModel.portfolio.holdingsCount).toBe(0);
+    expect(viewModel.actionItems[0]?.title).toBe("indstocks broker unavailable");
+    expect(viewModel.dataQuality.providerIssues.map((issue) => issue.name)).toContain("broker");
+    expect(Object.keys(viewModel).sort()).toEqual([
+      "actionItems",
+      "assetAllocation",
+      "conflicts",
+      "dataQuality",
+      "generatedAt",
+      "holdings",
+      "portfolio",
+      "providerHealth",
+      "reviewCandidates",
+    ]);
+  });
 });

@@ -41,11 +41,12 @@ describe("tui cli options", () => {
   });
 
   it("parses operator flags as explicit actions", () => {
-    const options = parseTuiCliOptions(["--provider-health", "--daily", "--json"]);
+    const options = parseTuiCliOptions(["--provider-health", "--daily", "--json", "--raw"]);
 
     expect(options.providerHealthFlag).toBe(true);
     expect(options.dailyFlag).toBe(true);
     expect(options.jsonFlag).toBe(true);
+    expect(options.rawFlag).toBe(true);
     expect(options.hasExplicitPrimaryAction).toBe(true);
   });
 });

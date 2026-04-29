@@ -75,6 +75,23 @@ Machine-readable contract for a future UI:
 bun run dev:tui -- --daily --json
 ```
 
+By default this returns a UI-ready daily view model with:
+
+- `providerHealth`
+- `portfolio`
+- `assetAllocation`
+- `actionItems`
+- `conflicts`
+- `reviewCandidates`
+- `holdings`
+- `dataQuality`
+
+Use `--raw` only when debugging the full internal workflow report:
+
+```bash
+bun run dev:tui -- --daily --json --raw
+```
+
 JSON output uses a stable envelope:
 
 ```json
