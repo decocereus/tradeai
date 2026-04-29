@@ -88,6 +88,75 @@ describe("app-services / portfolio workflows", () => {
     });
   });
 
+  it("enriches INDstocks mutual fund rows from AMFI NAV by ISIN", async () => {
+    const holdings = await Effect.runPromise(
+      getBrokerHoldings(
+        {},
+        {
+          config: { marketDataProvider: "groww" },
+          brokerSources: {
+            fetchBrokerHoldings: () =>
+              Effect.succeed([
+                {
+                  broker: "indstocks",
+                  securityId: "INF194KB1AL4",
+                  tradingSymbol: "INF194KB1AL4",
+                  exchangeSegment: "MF",
+                  isin: "INF194KB1AL4",
+                  quantity: 194,
+                  averagePrice: 0,
+                  lastTradedPrice: 0,
+                  closePrice: 0,
+                  marketValue: 0,
+                  pnlAbsolute: 0,
+                  pnlPercent: 0,
+                },
+              ]),
+            fetchBrokerTradeBook: () => Effect.succeed([]),
+          },
+          marketSources: {
+            fetchNseInstrumentProfiles: () => Effect.succeed([]),
+            fetchEquityQuotes: () => Effect.fail(new Error("unexpected equity quote")),
+            searchAmfiNav: (query) => {
+              expect(query).toBe("INF194KB1AL4");
+              return Effect.succeed([
+                {
+                  schemeCode: "147622",
+                  isinDivPayoutOrGrowth: "INF194KB1AL4",
+                  isinDivReinvestment: "-",
+                  schemeName: "Bandhan Small Cap Fund - Direct Plan - Growth",
+                  netAssetValue: "46.48",
+                  date: "29-Apr-2026",
+                },
+              ]);
+            },
+            searchCorporateEvents: () => Effect.succeed([]),
+            fetchCorporateEvents: () => Effect.succeed([]),
+            searchEquityProfiles: () => Effect.succeed([]),
+            searchEquityInstruments: () => Effect.succeed([]),
+            buildEquityQuoteSnapshot: () => [],
+          },
+          researchSources: {} as never,
+          memorySource: {} as never,
+          repositories: {} as never,
+        },
+      ),
+    );
+
+    expect(holdings[0]).toMatchObject({
+      broker: "indstocks",
+      tradingSymbol: "Bandhan Small Cap Fund - Direct Plan - Growth",
+      exchangeSegment: "MF",
+      lastTradedPrice: 46.48,
+      priceProvenance: {
+        status: "market_enriched",
+        source: "market",
+        marketDataProvider: "amfi",
+      },
+    });
+    expect(holdings[0]?.marketValue).toBeCloseTo(9017.12);
+  });
+
   it("records price enrichment misses in sync reports", () => {
     const current = {
       snapshotId: "indstocks:2026-04-17T12:00:00.000Z",

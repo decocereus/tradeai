@@ -108,11 +108,11 @@ export const mapIndstocksHolding = (
   record: IndstocksHoldingsApiRecord,
   quotesByScripCode: Record<string, IndstocksMarketQuoteEntry> = {},
 ): BrokerHolding | null => {
-  const securityId = record.security_id;
-  const tradingSymbol = record.trading_symbol || record.symbol;
+  const securityId = record.security_id || record.isin;
+  const tradingSymbol = record.trading_symbol || record.symbol || record.isin;
   const exchangeSegment = resolveHoldingExchangeSegment(record);
   const quantity = resolveHoldingQuantity(record);
-  const averagePrice = resolveHoldingAveragePrice(record);
+  const averagePrice = resolveHoldingAveragePrice(record) ?? 0;
   const quote = securityId ? quotesByScripCode[buildIndstocksScripCode(securityId, exchangeSegment)] : undefined;
   const lastTradedPrice =
     typeof record.last_traded_price === "number"
@@ -128,7 +128,6 @@ export const mapIndstocksHolding = (
     !tradingSymbol ||
     !record.isin ||
     typeof quantity !== "number" ||
-    typeof averagePrice !== "number" ||
     typeof lastTradedPrice !== "number" ||
     typeof closePrice !== "number"
   ) {
@@ -152,7 +151,7 @@ export const mapIndstocksHolding = (
     broker: "indstocks",
     securityId,
     tradingSymbol,
-    exchangeSegment,
+    exchangeSegment: record.security_id ? exchangeSegment : "MF",
     isin: record.isin,
     quantity,
     averagePrice,

@@ -48,7 +48,9 @@ export const filterAmfiNavEntries = (
       (entry) =>
         entry.schemeCode === normalizedQuery ||
         entry.schemeCode.includes(normalizedQuery) ||
-        entry.schemeName.toLowerCase().includes(normalizedQuery),
+        entry.schemeName.toLowerCase().includes(normalizedQuery) ||
+        entry.isinDivPayoutOrGrowth.toLowerCase() === normalizedQuery ||
+        entry.isinDivReinvestment.toLowerCase() === normalizedQuery,
     )
     .slice(0, limit);
 };

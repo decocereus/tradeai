@@ -69,6 +69,22 @@ describe("data-sources / indstocks", () => {
     expect(holding?.broker).toBe("indstocks");
   });
 
+  it("maps blank-symbol ISIN holdings as mutual fund holdings", () => {
+    const holding = mapIndstocksHolding({
+      isin: "INF194KB1AL4",
+      total_qty: 194,
+      avg_price: 0,
+    });
+
+    expect(holding).toMatchObject({
+      broker: "indstocks",
+      securityId: "INF194KB1AL4",
+      tradingSymbol: "INF194KB1AL4",
+      exchangeSegment: "MF",
+      quantity: 194,
+    });
+  });
+
   it("maps compact holdings records using quote enrichment", () => {
     const holding = mapIndstocksHolding(
       {

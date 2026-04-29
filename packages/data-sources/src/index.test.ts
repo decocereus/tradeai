@@ -42,6 +42,14 @@ Scheme Code;ISIN Div Payout/ ISIN Growth;ISIN Div Reinvestment;Scheme Name;Net A
     expect(filtered[0]?.schemeCode).toBe("122639");
   });
 
+  it("filters AMFI NAV entries by ISIN", () => {
+    const entries = parseAmfiNavText(sampleText);
+    const filtered = filterAmfiNavEntries("INF879O01027", entries);
+
+    expect(filtered).toHaveLength(1);
+    expect(filtered[0]?.schemeName).toContain("Parag Parikh");
+  });
+
   it("uses injected fetch for NAV retrieval", async () => {
     const fetchStub = (async (input: RequestInfo | URL) => {
       expect(input).toBe(AMFI_NAV_URL);

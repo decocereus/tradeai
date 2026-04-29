@@ -81,6 +81,50 @@ const normalizeMarketSymbol = (symbol: string) =>
     .replace(/_[A-Z]+$/i, "")
     .toUpperCase();
 
+const enrichMutualFundHolding = (
+  holding: BrokerHolding,
+  dependencies: TradeAiWorkflowDependencies,
+) =>
+  Effect.gen(function* () {
+    const navEntries = yield* dependencies.marketSources.searchAmfiNav(holding.isin).pipe(
+      Effect.catchAll((error) => {
+        log.warn({ action: "enrichMutualFundHolding", isin: holding.isin, error }, "AMFI NAV enrichment unavailable");
+        return Effect.succeed([]);
+      }),
+    );
+    const nav = navEntries[0];
+    const navValue = nav ? Number(nav.netAssetValue) : Number.NaN;
+    if (!nav || !Number.isFinite(navValue)) {
+      return {
+        ...holding,
+        priceProvenance: {
+          status: "market_missing" as const,
+          source: "fallback" as const,
+          marketDataProvider: "amfi" as const,
+          quoteSymbol: holding.isin,
+        },
+      };
+    }
+
+    const marketValue = holding.quantity * navValue;
+    return {
+      ...holding,
+      instrumentName: nav.schemeName,
+      tradingSymbol: nav.schemeName,
+      lastTradedPrice: navValue,
+      closePrice: navValue,
+      marketValue,
+      pnlAbsolute: holding.averagePrice > 0 ? (navValue - holding.averagePrice) * holding.quantity : 0,
+      pnlPercent: holding.averagePrice > 0 ? ((navValue - holding.averagePrice) / holding.averagePrice) * 100 : 0,
+      priceProvenance: {
+        status: "market_enriched" as const,
+        source: "market" as const,
+        marketDataProvider: "amfi" as const,
+        quoteSymbol: holding.isin,
+      },
+    };
+  });
+
 const summarizePriceEnrichment = (
   positions: readonly PortfolioPositionSnapshot[],
   marketDataProvider: MarketDataProvider,
@@ -131,6 +175,10 @@ export const enrichBrokerHoldingsWithMarketData = (
     return yield* Effect.all(
       holdings.map((holding) =>
         Effect.gen(function* () {
+          if (holding.exchangeSegment === "MF") {
+            return yield* enrichMutualFundHolding(holding, dependencies);
+          }
+
           const normalizedHoldingSymbol = normalizeMarketSymbol(holding.tradingSymbol);
           const profile = profilesBySymbol.get(normalizedHoldingSymbol);
           const instrumentName = profile?.name || profile?.shortName || holding.instrumentName;
