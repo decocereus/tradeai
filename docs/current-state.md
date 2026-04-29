@@ -92,7 +92,10 @@ The TUI has three practical modes:
 3. JSON backend mode
    Running `bun run dev:tui -- --daily --json`, `--provider-health --json`, or `--dashboard --json` returns a parseable `tradeai.cli.v1` envelope for a future UI. Daily JSON now returns a UI-ready view model by default; use `--daily --json --raw` for the internal workflow report.
 
-4. Explicit command mode
+4. API transport mode
+   Running `bun run dev:api` exposes `/operator/daily` and `/operator/health` over HTTP using the same operator contract envelope.
+
+5. Explicit command mode
    Running explicit flags still exposes the detailed operator flows.
 
 ## Current Commands

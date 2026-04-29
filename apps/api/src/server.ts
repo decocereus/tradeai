@@ -24,6 +24,27 @@ const jsonResponse = (payload: unknown, init?: ResponseInit) =>
 const errorResponse = (status: number, message: string) =>
   jsonResponse({ error: message }, { status });
 
+const contractResponse = (command: string, data: unknown) =>
+  jsonResponse({
+    ok: true,
+    command,
+    schemaVersion: "tradeai.cli.v1",
+    generatedAt: new Date().toISOString(),
+    data,
+  });
+
+const contractErrorResponse = (command: string, status: number, error: string) =>
+  jsonResponse(
+    {
+      ok: false,
+      command,
+      schemaVersion: "tradeai.cli.v1",
+      generatedAt: new Date().toISOString(),
+      error,
+    },
+    { status },
+  );
+
 const parseBroker = (value: string | null): BrokerSource | undefined => {
   if (value === null || value === "") return undefined;
   return value === "indstocks" || value === "manual_csv" ? value : undefined;
@@ -59,6 +80,19 @@ const runJson = async <T>(effect: Effect.Effect<T, Error>) => {
   }
 };
 
+const runContractJson = async <T>(command: string, effect: Effect.Effect<T, Error>) => {
+  try {
+    const result = await Effect.runPromise(effect);
+    return contractResponse(command, result);
+  } catch (error) {
+    return contractErrorResponse(
+      command,
+      500,
+      error instanceof Error ? error.message : String(error),
+    );
+  }
+};
+
 export const createApiRequestHandler = (options: ApiServerOptions = {}) => {
   const tradeAi = resolveService(options);
 
@@ -79,6 +113,17 @@ export const createApiRequestHandler = (options: ApiServerOptions = {}) => {
         return errorResponse(400, "Invalid broker. Expected indstocks or manual_csv.");
       }
       return runJson(tradeAi.getPortfolioDashboard(broker ? { broker } : {}));
+    }
+
+    if (url.pathname === "/operator/health") {
+      return runContractJson("provider-health", tradeAi.getProviderHealth());
+    }
+
+    if (url.pathname === "/operator/daily") {
+      const raw = url.searchParams.get("raw") === "true";
+      return raw
+        ? runContractJson("daily", tradeAi.getDailyOperatorReport())
+        : runContractJson("daily", tradeAi.getDailyOperatorViewModel());
     }
 
     if (url.pathname === "/market/equities/search") {

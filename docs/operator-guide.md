@@ -203,10 +203,15 @@ bun run dev:api
 Initial read-only endpoints:
 
 - `GET /health`
+- `GET /operator/health`
+- `GET /operator/daily`
+- `GET /operator/daily?raw=true`
 - `GET /portfolio/dashboard?broker=indstocks`
 - `GET /market/equities/search?q=RELIANCE`
 - `GET /market/quotes?instrumentKey=NSE_EQ|INE002A01018`
 - `GET /research/equity?q=RELIANCE`
+
+`/operator/health` and `/operator/daily` use the same `tradeai.cli.v1` envelope as CLI JSON output. `/operator/daily` returns the UI-ready daily view model by default; `raw=true` returns the internal workflow report.
 
 ### Pi session path
 
