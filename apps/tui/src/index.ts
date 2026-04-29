@@ -50,8 +50,42 @@ const {
   importHoldingsPath,
   importTradesPath,
   manualDecisionFlag,
+  jsonFlag,
   hasExplicitPrimaryAction,
 } = parseTuiCliOptions(process.argv.slice(2));
+
+interface JsonEnvelope<T> {
+  ok: boolean;
+  command: string;
+  schemaVersion: "tradeai.cli.v1";
+  generatedAt: string;
+  data?: T;
+  error?: string;
+}
+
+const writeJson = <T>(envelope: JsonEnvelope<T>) => {
+  process.stdout.write(`${JSON.stringify(envelope, null, 2)}\n`);
+};
+
+const writeJsonData = <T>(command: string, data: T) => {
+  writeJson({
+    ok: true,
+    command,
+    schemaVersion: "tradeai.cli.v1",
+    generatedAt: new Date().toISOString(),
+    data,
+  });
+};
+
+const writeJsonError = (command: string, error: unknown) => {
+  writeJson({
+    ok: false,
+    command,
+    schemaVersion: "tradeai.cli.v1",
+    generatedAt: new Date().toISOString(),
+    error: error instanceof Error ? error.message : String(error),
+  });
+};
 
 const readEnvValue = (name: string): string | undefined => {
   const value = process.env[name]?.trim();
@@ -109,6 +143,19 @@ const shouldRenderDashboard = dashboardFlag || shouldAutoRenderDashboard;
 
 const main = Effect.gen(function* () {
   if (shouldAutoRenderDashboard) {
+    if (jsonFlag) {
+      const report = yield* tradeAi.getPortfolioDashboard(
+        dashboardBroker ? { broker: dashboardBroker } : {},
+      ).pipe(
+        Effect.catchAll((error) => {
+          writeJsonError("dashboard", error);
+          return Effect.succeed(undefined);
+        }),
+      );
+      if (report) writeJsonData("dashboard", report);
+      return;
+    }
+
     console.log("TradeAI Home");
     console.log("============");
     renderDivider("Portfolio Dashboard");
@@ -130,7 +177,31 @@ const main = Effect.gen(function* () {
     return;
   }
 
+  if (dashboardFlag && jsonFlag) {
+    const report = yield* tradeAi.getPortfolioDashboard(
+      dashboardBroker ? { broker: dashboardBroker } : {},
+    ).pipe(
+      Effect.catchAll((error) => {
+        writeJsonError("dashboard", error);
+        return Effect.succeed(undefined);
+      }),
+    );
+    if (report) writeJsonData("dashboard", report);
+    return;
+  }
+
   if (dailyFlag) {
+    if (jsonFlag) {
+      const report = yield* tradeAi.getDailyOperatorReport().pipe(
+        Effect.catchAll((error) => {
+          writeJsonError("daily", error);
+          return Effect.succeed(undefined);
+        }),
+      );
+      if (report) writeJsonData("daily", report);
+      return;
+    }
+
     console.log("TradeAI Daily Operator Report");
     console.log("=============================");
     const report = yield* tradeAi.getDailyOperatorReport().pipe(
@@ -149,10 +220,24 @@ const main = Effect.gen(function* () {
   }
 
   if (providerHealthFlag) {
+    if (jsonFlag) {
+      const report = yield* tradeAi.getProviderHealth();
+      writeJsonData("provider-health", report);
+      return;
+    }
+
     console.log("TradeAI Provider Health");
     console.log("=======================");
     const report = yield* tradeAi.getProviderHealth();
     renderProviderHealthSection(report);
+    return;
+  }
+
+  if (jsonFlag) {
+    writeJsonError(
+      "tui",
+      new Error("JSON output is currently supported for --daily, --provider-health, and --dashboard."),
+    );
     return;
   }
 
@@ -671,6 +756,10 @@ const main = Effect.gen(function* () {
 });
 
 void Effect.runPromise(main).catch((error: unknown) => {
-  console.error(error);
+  if (jsonFlag) {
+    writeJsonError("tui", error);
+  } else {
+    console.error(error);
+  }
   process.exitCode = 1;
 });

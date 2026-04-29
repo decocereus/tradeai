@@ -55,6 +55,12 @@ bun run dev:tui -- --provider-health
 
 This checks INDstocks, Groww, AMFI NAV, Aftermarkets research, and local database readiness without printing secret values.
 
+Machine-readable contract:
+
+```bash
+bun run dev:tui -- --provider-health --json
+```
+
 ### 2. Run the daily operator report
 
 ```bash
@@ -62,6 +68,24 @@ bun run dev:tui -- --daily
 ```
 
 This runs provider health, syncs and reviews the live INDstocks portfolio, and prints the current dashboard/action list. If a required provider is down, it stops before portfolio decisioning and tells you what token/provider needs attention.
+
+Machine-readable contract for a future UI:
+
+```bash
+bun run dev:tui -- --daily --json
+```
+
+JSON output uses a stable envelope:
+
+```json
+{
+  "ok": true,
+  "command": "daily",
+  "schemaVersion": "tradeai.cli.v1",
+  "generatedAt": "2026-04-30T00:00:00.000Z",
+  "data": {}
+}
+```
 
 ### 3. Confirm live holdings
 

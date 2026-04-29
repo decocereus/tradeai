@@ -1,6 +1,7 @@
 import pino from "pino";
 
-const logLevel = process.env.LOG_LEVEL ?? "info";
+const jsonOutputRequested = process.argv.includes("--json");
+const logLevel = jsonOutputRequested ? "silent" : process.env.LOG_LEVEL ?? "info";
 const pretty = process.env.LOG_PRETTY !== "false";
 
 export const logger = pino(

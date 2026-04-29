@@ -89,7 +89,10 @@ The TUI has three practical modes:
 2. Daily operator mode
    Running `bun run dev:tui -- --daily` checks provider health, syncs/reviews the live portfolio, and prints the dashboard/action list.
 
-3. Explicit command mode
+3. JSON backend mode
+   Running `bun run dev:tui -- --daily --json`, `--provider-health --json`, or `--dashboard --json` returns a parseable `tradeai.cli.v1` envelope for a future UI.
+
+4. Explicit command mode
    Running explicit flags still exposes the detailed operator flows.
 
 ## Current Commands
@@ -99,7 +102,9 @@ The TUI has three practical modes:
 ```bash
 bun run dev:tui
 bun run dev:tui -- --provider-health
+bun run dev:tui -- --provider-health --json
 bun run dev:tui -- --daily
+bun run dev:tui -- --daily --json
 bun run dev:tui -- --holdings
 bun run dev:tui -- --sync-portfolio
 bun run dev:tui -- --portfolio-decision

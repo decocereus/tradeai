@@ -23,6 +23,7 @@ export interface TuiCliOptions {
   importHoldingsPath: string | undefined;
   importTradesPath: string | undefined;
   manualDecisionFlag: boolean;
+  jsonFlag: boolean;
   hasExplicitPrimaryAction: boolean;
 }
 
@@ -70,6 +71,7 @@ export const parseTuiCliOptions = (args: readonly string[]): TuiCliOptions => {
   const holdingHistorySymbol = readNextValue(args, "--holding-history", "RELIANCE-EQ");
   const importHoldingsPath = readNextValue(args, "--import-holdings", "");
   const importTradesPath = readNextValue(args, "--import-trades", "");
+  const jsonFlag = args.includes("--json");
   const holdingsFlag = args.includes("--holdings");
   const persistHoldingsFlag = args.includes("--persist-holdings");
   const diffHoldingsFlag = args.includes("--diff-holdings");
@@ -128,6 +130,7 @@ export const parseTuiCliOptions = (args: readonly string[]): TuiCliOptions => {
     importHoldingsPath,
     importTradesPath,
     manualDecisionFlag,
+    jsonFlag,
     hasExplicitPrimaryAction,
   };
 };
