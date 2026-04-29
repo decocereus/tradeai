@@ -4,8 +4,10 @@ import {
 } from "@tradeai/data-sources";
 import type {
   BrokerHolding,
+  BrokerSource,
   PortfolioMemorySnapshot,
   PortfolioSyncReport,
+  PortfolioPositionSnapshot,
 } from "@tradeai/domain";
 import {
   buildPortfolioMemorySnapshot,
@@ -61,6 +63,11 @@ const shouldPersistPortfolioMemory = (
   options?.persist === false
     ? false
     : dependencies.repositories.hasConfiguredDatabaseUrl(options?.databaseUrl);
+
+const inferBrokerSourceFromPositions = (
+  positions: readonly PortfolioPositionSnapshot[],
+  fallback: BrokerSource = "groww",
+): BrokerSource => positions[0]?.sourceBroker ?? fallback;
 
 export const enrichBrokerHoldingsWithInstrumentNames = (
   holdings: readonly BrokerHolding[],
@@ -138,7 +145,9 @@ export const getBrokerPortfolioMemorySnapshot = (
   dependencies: TradeAiWorkflowDependencies = defaultDependencies,
 ) =>
   getBrokerPortfolioPositions(input, dependencies).pipe(
-    Effect.map((positions) => buildPortfolioMemorySnapshot(positions, "indstocks")),
+    Effect.map((positions) =>
+      buildPortfolioMemorySnapshot(positions, inferBrokerSourceFromPositions(positions)),
+    ),
   );
 
 export const getManualPortfolioMemorySnapshot = (holdingsCsvPath: string) =>
@@ -158,6 +167,11 @@ export const persistBrokerPortfolioMemorySnapshot = (
         ...(input.accessToken ? { accessToken: input.accessToken } : {}),
       },
       dependencies,
+    ).pipe(
+      Effect.catchAll((error) => {
+        log.warn({ action: "persistBrokerPortfolioMemorySnapshot", error }, "trade-book unavailable");
+        return Effect.succeed([]);
+      }),
     );
     const result = yield* Effect.tryPromise(() =>
       timed("app-services", "persistBrokerPortfolioMemorySnapshot", () =>
@@ -179,7 +193,7 @@ export const diffBrokerPortfolioAgainstLatestSnapshot = (
   Effect.gen(function* () {
     const current = yield* getBrokerPortfolioMemorySnapshot(input, dependencies);
     const previous = yield* Effect.tryPromise(() =>
-      dependencies.repositories.loadLatestPortfolioSnapshot("indstocks", input.databaseUrl),
+      dependencies.repositories.loadLatestPortfolioSnapshot(current.broker, input.databaseUrl),
     );
     const diff = diffPortfolioMemorySnapshots(previous, current);
 
@@ -202,7 +216,7 @@ export const buildPortfolioSyncReport = (
 ): PortfolioSyncReport => {
   const diff = diffPortfolioMemorySnapshots(previous, current);
   return {
-    broker: "indstocks",
+    broker: current.broker,
     dbConfigured,
     ...(previous ? { previousSnapshotId: previous.snapshotId } : {}),
     currentSnapshotId: current.snapshotId,
@@ -234,11 +248,16 @@ export const syncBrokerPortfolio = (
         ...(input.accessToken ? { accessToken: input.accessToken } : {}),
       },
       dependencies,
+    ).pipe(
+      Effect.catchAll((error) => {
+        log.warn({ action: "syncBrokerPortfolio.tradeBook", error }, "trade-book unavailable");
+        return Effect.succeed([]);
+      }),
     );
 
     const previous = dbConfigured
       ? yield* Effect.tryPromise(() =>
-          dependencies.repositories.loadLatestPortfolioSnapshot("indstocks", input.databaseUrl),
+          dependencies.repositories.loadLatestPortfolioSnapshot(current.broker, input.databaseUrl),
         )
       : undefined;
 

@@ -51,24 +51,47 @@ describe("data-sources / groww", () => {
 
   it("maps holdings into broker holdings", () => {
     expect(
-      mapGrowwHolding({
-        isin: "INE002A01018",
-        trading_symbol: "RELIANCE",
-        quantity: 10,
-        average_price: 1400,
-      }),
+      mapGrowwHolding(
+        {
+          isin: "INE002A01018",
+          trading_symbol: "RELIANCE",
+          quantity: 10,
+          average_price: 1400,
+        },
+        {
+          instrumentKey: "NSE_RELIANCE",
+          tradingSymbol: "RELIANCE",
+          lastPrice: 1500,
+          closePrice: 1490,
+        },
+      ),
     ).toMatchObject({
       broker: "groww",
       tradingSymbol: "RELIANCE",
       isin: "INE002A01018",
       quantity: 10,
       averagePrice: 1400,
+      lastTradedPrice: 1500,
+      closePrice: 1490,
+      marketValue: 15000,
+      pnlAbsolute: 1000,
     });
   });
 
   it("fetches holdings with injected fetch", async () => {
-    const fetchStub = (async () =>
-      new Response(
+    const fetchStub = (async (input: RequestInfo | URL) => {
+      if (String(input).includes("/live-data/quote")) {
+        return new Response(
+          JSON.stringify({
+            status: "SUCCESS",
+            payload: {
+              last_price: 1500,
+              ohlc: { close: 1490 },
+            },
+          }),
+        );
+      }
+      return new Response(
         JSON.stringify({
           status: "SUCCESS",
           payload: {
@@ -82,10 +105,85 @@ describe("data-sources / groww", () => {
             ],
           },
         }),
-      )) as unknown as typeof fetch;
+      );
+    }) as unknown as typeof fetch;
 
     const holdings = await Effect.runPromise(fetchGrowwHoldings("token", fetchStub));
     expect(holdings[0]?.broker).toBe("groww");
+    expect(holdings[0]?.lastTradedPrice).toBe(1500);
+    expect(holdings[0]?.pnlAbsolute).toBe(1000);
+  });
+
+  it("keeps holdings usable when quote enrichment is unavailable", async () => {
+    const fetchStub = (async (input: RequestInfo | URL) => {
+      if (String(input).includes("/live-data/quote")) {
+        return new Response("unavailable", { status: 500 });
+      }
+      return new Response(
+        JSON.stringify({
+          status: "SUCCESS",
+          payload: {
+            holdings: [
+              {
+                isin: "INE002A01018",
+                trading_symbol: "RELIANCE",
+                quantity: 10,
+                average_price: 1400,
+              },
+            ],
+          },
+        }),
+      );
+    }) as unknown as typeof fetch;
+
+    const holdings = await Effect.runPromise(fetchGrowwHoldings("token", fetchStub));
+    expect(holdings[0]?.broker).toBe("groww");
+    expect(holdings[0]?.lastTradedPrice).toBe(1400);
+  });
+
+  it("does not drop valid quote enrichment when one holding quote fails", async () => {
+    const fetchStub = (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("trading_symbol=BAD")) {
+        return new Response("unavailable", { status: 500 });
+      }
+      if (url.includes("/live-data/quote")) {
+        return new Response(
+          JSON.stringify({
+            status: "SUCCESS",
+            payload: {
+              last_price: 1500,
+              ohlc: { close: 1490 },
+            },
+          }),
+        );
+      }
+      return new Response(
+        JSON.stringify({
+          status: "SUCCESS",
+          payload: {
+            holdings: [
+              {
+                isin: "INE002A01018",
+                trading_symbol: "RELIANCE",
+                quantity: 10,
+                average_price: 1400,
+              },
+              {
+                isin: "INE000000000",
+                trading_symbol: "BAD",
+                quantity: 1,
+                average_price: 100,
+              },
+            ],
+          },
+        }),
+      );
+    }) as unknown as typeof fetch;
+
+    const holdings = await Effect.runPromise(fetchGrowwHoldings("token", fetchStub));
+    expect(holdings.find((holding) => holding.tradingSymbol === "RELIANCE")?.lastTradedPrice).toBe(1500);
+    expect(holdings.find((holding) => holding.tradingSymbol === "BAD")?.lastTradedPrice).toBe(100);
   });
 
   it("maps quotes and quote snapshots", () => {

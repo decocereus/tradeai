@@ -10,8 +10,8 @@ import { summarizePortfolioSyncReport } from "./report-formatters.ts";
 describe("app-services / portfolio workflows", () => {
   it("builds a portfolio sync report", () => {
     const previous = {
-      snapshotId: "indstocks:2026-04-16T12:00:00.000Z",
-      broker: "indstocks",
+      snapshotId: "groww:2026-04-16T12:00:00.000Z",
+      broker: "groww",
       capturedAt: "2026-04-16T12:00:00.000Z",
       positions: [
         {
@@ -25,7 +25,7 @@ describe("app-services / portfolio workflows", () => {
           marketValue: 125255,
           pnlAbsolute: 15255,
           pnlPercent: 13.87,
-          sourceBroker: "indstocks",
+          sourceBroker: "groww",
         },
       ],
       summary: {
@@ -39,8 +39,8 @@ describe("app-services / portfolio workflows", () => {
     } as const;
 
     const current = {
-      snapshotId: "indstocks:2026-04-17T12:00:00.000Z",
-      broker: "indstocks",
+      snapshotId: "groww:2026-04-17T12:00:00.000Z",
+      broker: "groww",
       capturedAt: "2026-04-17T12:00:00.000Z",
       positions: [
         {
@@ -54,7 +54,7 @@ describe("app-services / portfolio workflows", () => {
           marketValue: 137780.5,
           pnlAbsolute: 16780.5,
           pnlPercent: 13.87,
-          sourceBroker: "indstocks",
+          sourceBroker: "groww",
         },
       ],
       summary: {
@@ -72,6 +72,7 @@ describe("app-services / portfolio workflows", () => {
       tradeFillsInserted: 3,
     });
 
+    expect(report.broker).toBe("groww");
     expect(report.diff.changedPositions).toBe(1);
     expect(report.persisted).toBe(true);
     expect(summarizePortfolioSyncReport(report)).toContain("persisted=true");

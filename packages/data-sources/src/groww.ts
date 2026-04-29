@@ -185,7 +185,10 @@ const parseOhlcClose = (ohlc: GrowwQuotePayload["ohlc"]): number | undefined => 
   return closeMatch ? Number(closeMatch[1]) : undefined;
 };
 
-export const mapGrowwHolding = (record: GrowwHoldingRecord): BrokerHolding | null => {
+export const mapGrowwHolding = (
+  record: GrowwHoldingRecord,
+  quote?: EquityQuoteEntry,
+): BrokerHolding | null => {
   const tradingSymbol = record.trading_symbol?.trim();
   const isin = record.isin?.trim();
   const quantity = record.quantity;
@@ -193,6 +196,11 @@ export const mapGrowwHolding = (record: GrowwHoldingRecord): BrokerHolding | nul
   if (!tradingSymbol || !isin || typeof quantity !== "number" || typeof averagePrice !== "number") {
     return null;
   }
+  const lastTradedPrice = quote?.lastPrice ?? averagePrice;
+  const closePrice = quote?.closePrice ?? lastTradedPrice;
+  const marketValue = quantity * lastTradedPrice;
+  const pnlAbsolute = (lastTradedPrice - averagePrice) * quantity;
+  const pnlPercent = averagePrice > 0 ? ((lastTradedPrice - averagePrice) / averagePrice) * 100 : 0;
 
   return {
     broker: "groww",
@@ -202,11 +210,11 @@ export const mapGrowwHolding = (record: GrowwHoldingRecord): BrokerHolding | nul
     isin,
     quantity,
     averagePrice,
-    lastTradedPrice: averagePrice,
-    closePrice: averagePrice,
-    marketValue: quantity * averagePrice,
-    pnlAbsolute: 0,
-    pnlPercent: 0,
+    lastTradedPrice,
+    closePrice,
+    marketValue,
+    pnlAbsolute,
+    pnlPercent,
   };
 };
 
@@ -234,9 +242,28 @@ export const fetchGrowwHoldings = (
         (await response.json()) as GrowwApiResponse<{ holdings?: GrowwHoldingRecord[] }>,
         "holdings fetch",
       );
+      const holdingRecords = payload.holdings ?? [];
+      const symbols = holdingRecords
+        .map((holding) => holding.trading_symbol?.trim())
+        .filter((symbol): symbol is string => Boolean(symbol));
+      const quoteResults = await Promise.allSettled(
+        symbols.map((symbol) => fetchGrowwQuote(symbol, resolvedToken, fetchImpl)),
+      );
+      const quotes = quoteResults
+        .filter((result): result is PromiseFulfilledResult<EquityQuoteEntry | null> => result.status === "fulfilled")
+        .map((result) => result.value)
+        .filter((quote): quote is EquityQuoteEntry => quote !== null);
+      const quotesBySymbol = new Map(
+        quotes.map((quote) => [quote.tradingSymbol?.toUpperCase() ?? quote.instrumentKey, quote]),
+      );
 
-      return (payload.holdings ?? [])
-        .map(mapGrowwHolding)
+      return holdingRecords
+        .map((holding) =>
+          mapGrowwHolding(
+            holding,
+            quotesBySymbol.get(holding.trading_symbol?.trim().toUpperCase() ?? ""),
+          ),
+        )
         .filter((holding): holding is BrokerHolding => holding !== null);
     },
     catch: (error) => (error instanceof Error ? error : new Error(String(error))),
@@ -260,6 +287,29 @@ export const mapGrowwQuoteEntry = (
   };
 };
 
+const fetchGrowwQuote = async (
+  instrumentKey: string,
+  accessToken: string,
+  fetchImpl: typeof fetch,
+): Promise<EquityQuoteEntry | null> => {
+  const symbol = normalizeGrowwSymbol(instrumentKey);
+  const url = new URL(`${GROWW_API_BASE_URL}/live-data/quote`);
+  url.searchParams.set("exchange", "NSE");
+  url.searchParams.set("segment", "CASH");
+  url.searchParams.set("trading_symbol", symbol);
+
+  const response = await fetchImpl(url, { headers: createGrowwHeaders(accessToken) });
+  if (!response.ok) {
+    throw await buildGrowwHttpError(response, "quote fetch");
+  }
+
+  const payload = assertGrowwSuccess(
+    (await response.json()) as GrowwApiResponse<GrowwQuotePayload>,
+    "quote fetch",
+  );
+  return mapGrowwQuoteEntry(buildGrowwExchangeSymbol(symbol), payload);
+};
+
 export const fetchGrowwQuoteSnapshot = (
   instrumentKeys: readonly string[],
   accessToken?: string,
@@ -269,24 +319,7 @@ export const fetchGrowwQuoteSnapshot = (
     try: async () => {
       const resolvedToken = await resolveGrowwAccessTokenForRequest(accessToken, fetchImpl);
       const quotes = await Promise.all(
-        instrumentKeys.map(async (instrumentKey) => {
-          const symbol = normalizeGrowwSymbol(instrumentKey);
-          const url = new URL(`${GROWW_API_BASE_URL}/live-data/quote`);
-          url.searchParams.set("exchange", "NSE");
-          url.searchParams.set("segment", "CASH");
-          url.searchParams.set("trading_symbol", symbol);
-
-          const response = await fetchImpl(url, { headers: createGrowwHeaders(resolvedToken) });
-          if (!response.ok) {
-            throw await buildGrowwHttpError(response, "quote fetch");
-          }
-
-          const payload = assertGrowwSuccess(
-            (await response.json()) as GrowwApiResponse<GrowwQuotePayload>,
-            "quote fetch",
-          );
-          return mapGrowwQuoteEntry(buildGrowwExchangeSymbol(symbol), payload);
-        }),
+        instrumentKeys.map((instrumentKey) => fetchGrowwQuote(instrumentKey, resolvedToken, fetchImpl)),
       );
 
       return quotes.filter((quote): quote is EquityQuoteEntry => quote !== null);
