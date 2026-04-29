@@ -16,6 +16,7 @@ Current scaffold commands:
 - `bun run dev:tui -- --daily --json`
 - `bun run dev:tui -- --daily --json --raw`
 - `bun run dev:api`
+- `open http://localhost:3000/operator`
 - `curl http://localhost:3000/operator/daily`
 - `curl http://localhost:3000/operator/health`
 - `bun run dev:tui -- --dashboard`

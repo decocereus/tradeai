@@ -7,6 +7,7 @@ import {
 import { Effect } from "effect";
 
 import { buildRuntimeConfigFromEnv } from "./runtime-config.ts";
+import { operatorPageHtml } from "./operator-page.ts";
 
 export interface ApiServerOptions extends CreateTradeAiWorkflowServiceOptions {
   service?: TradeAiWorkflowService;
@@ -18,6 +19,13 @@ const jsonResponse = (payload: unknown, init?: ResponseInit) =>
     headers: {
       "content-type": "application/json; charset=utf-8",
       ...init?.headers,
+    },
+  });
+
+const htmlResponse = (html: string) =>
+  new Response(html, {
+    headers: {
+      "content-type": "text/html; charset=utf-8",
     },
   });
 
@@ -105,6 +113,10 @@ export const createApiRequestHandler = (options: ApiServerOptions = {}) => {
 
     if (url.pathname === "/health") {
       return jsonResponse({ status: "ok" });
+    }
+
+    if (url.pathname === "/" || url.pathname === "/operator") {
+      return htmlResponse(operatorPageHtml);
     }
 
     if (url.pathname === "/portfolio/dashboard") {

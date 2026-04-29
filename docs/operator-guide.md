@@ -200,6 +200,11 @@ bun run dev:tui -- --amfi "parag parikh"
 bun run dev:api
 ```
 
+Operator screen:
+
+- `GET /operator`
+- `GET /`
+
 Initial read-only endpoints:
 
 - `GET /health`

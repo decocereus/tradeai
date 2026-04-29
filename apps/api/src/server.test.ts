@@ -49,6 +49,17 @@ describe("api server", () => {
     expect(await readJson(response)).toEqual({ status: "ok" });
   });
 
+  it("serves the operator dashboard page", async () => {
+    const handler = createApiRequestHandler();
+    const response = await handler(new Request("http://localhost/operator"));
+    const body = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toContain("text/html");
+    expect(body).toContain("TradeAI Operator");
+    expect(body).toContain("/operator/daily");
+  });
+
   it("validates required query params", async () => {
     const handler = createApiRequestHandler();
     const response = await handler(new Request("http://localhost/market/equities/search"));
