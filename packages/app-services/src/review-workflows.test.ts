@@ -56,7 +56,7 @@ describe("app-services / review workflows", () => {
           invalidationConditions: [],
         },
         researchQuality: {
-          source: "upstox",
+          source: "market",
           completeness: "complete",
           missingSignals: [],
           fallbacksUsed: [],

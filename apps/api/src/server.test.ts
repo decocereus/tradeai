@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import type {
-  UpstoxInstrumentProfile,
-  UpstoxQuoteSnapshot,
+  EquityInstrumentProfile,
+  EquityQuoteSnapshot,
 } from "@tradeai/domain";
 import { Effect } from "effect";
 
@@ -29,7 +29,7 @@ describe("api server", () => {
   });
 
   it("routes equity search through injected market sources", async () => {
-    const profile: UpstoxInstrumentProfile = {
+    const profile: EquityInstrumentProfile = {
       instrumentKey: "NSE_EQ|INE002A01018",
       exchange: "NSE",
       tradingSymbol: "RELIANCE",
@@ -53,7 +53,7 @@ describe("api server", () => {
   });
 
   it("routes quote lookups through injected market sources", async () => {
-    const quote: UpstoxQuoteSnapshot = {
+    const quote: EquityQuoteSnapshot = {
       instrumentKey: "NSE_EQ|INE002A01018",
       exchange: "NSE",
       tradingSymbol: "RELIANCE",

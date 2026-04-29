@@ -177,20 +177,18 @@ describe("app-services / workflow service", () => {
     ]);
   });
 
-  it("uses TrueData market sources when configured", async () => {
+  it("uses Groww market sources by default", async () => {
     const calls: string[] = [];
     const tradeAi = createTradeAiWorkflowService({
       config: {
-        marketDataProvider: "truedata",
-        trueDataUserId: "user",
-        trueDataPassword: "password",
+        growwAccessToken: "groww-token",
       },
       marketSources: {
-        fetchEquityQuotes: (symbols) => {
-          calls.push(`quotes:${symbols.join(",")}`);
+        fetchEquityQuotes: (symbols, accessToken) => {
+          calls.push(`quotes:${symbols.join(",")}:${accessToken}`);
           return Effect.succeed([
             {
-              instrumentKey: "RELIANCE",
+              instrumentKey: "NSE_RELIANCE",
               tradingSymbol: "RELIANCE",
               lastPrice: 2500,
             },
@@ -203,9 +201,9 @@ describe("app-services / workflow service", () => {
       tradeAi.getEquityQuoteSnapshots({ instrumentKeys: ["RELIANCE"] }),
     );
 
-    expect(quotes[0]?.instrumentKey).toBe("RELIANCE");
+    expect(quotes[0]?.instrumentKey).toBe("NSE_RELIANCE");
     expect(quotes[0]?.tradingSymbol).toBe("RELIANCE");
-    expect(calls).toEqual(["quotes:RELIANCE"]);
+    expect(calls).toEqual(["quotes:RELIANCE:groww-token"]);
   });
 
   it("uses Aftermarkets research sources when configured", async () => {

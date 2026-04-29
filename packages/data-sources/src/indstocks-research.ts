@@ -4,7 +4,6 @@ import type {
   ResearchPacket,
   ResearchQuality,
   TechnicalAnalysisSnapshot,
-  UpstoxFundamentalsSnapshot,
 } from "@tradeai/domain";
 import { Effect } from "effect";
 
@@ -13,7 +12,6 @@ import {
   fetchIndstocksHistoricalData,
   fetchIndstocksMarketQuotes,
 } from "./indstocks.ts";
-import { fetchUpstoxFundamentalsSnapshot, parseCroreNumber, parsePercentNumber } from "./upstox-fundamentals.ts";
 import { scoreCorporateEventSignal, searchBseAnnouncements } from "./bse-events.ts";
 import { analyzeHistoricalCandles } from "@tradeai/market-analysis";
 import { inferSectorFromEvidence } from "../../strategy-engine/src/sector-inference.ts";
@@ -39,13 +37,11 @@ export interface IndstocksPositionResearchPacketInput {
 export const buildResearchPacketFromIndstocksPosition = (
   position: PortfolioPositionSnapshot,
   options?: {
-    fundamentals?: UpstoxFundamentalsSnapshot;
     events?: readonly CorporateEvent[];
     technicalAnalysis?: TechnicalAnalysisSnapshot;
     researchQuality?: ResearchQuality;
   },
 ): ResearchPacket => {
-  const fundamentals = options?.fundamentals;
   const technicalAnalysis = options?.technicalAnalysis;
   const events = options?.events ?? [];
 
@@ -54,25 +50,6 @@ export const buildResearchPacketFromIndstocksPosition = (
       ? 0
       : ((position.lastTradedPrice - position.closePrice) / position.closePrice) * 100;
   const absolutePercentChange = Math.abs(rawPercentChange);
-  const roe = parsePercentNumber(
-    fundamentals?.fundamentalMetrics.find((metric) => metric.label === "ROE")?.value ?? "",
-  );
-  const roce = parsePercentNumber(
-    fundamentals?.fundamentalMetrics.find((metric) => metric.label === "ROCE")?.value ?? "",
-  );
-  const debtToEquity = parseCroreNumber(
-    fundamentals?.fundamentalMetrics.find((metric) => metric.label === "Debt/Equity ratio")?.value ?? "",
-  );
-  const revenueRows = fundamentals?.revenueStatement ?? [];
-  const latestRevenue = revenueRows[0]?.revenueCrores;
-  const previousRevenue = revenueRows[1]?.revenueCrores;
-  const latestProfit = revenueRows[0]?.netProfitCrores;
-  const previousProfit = revenueRows[1]?.netProfitCrores;
-  const revenueGrowth =
-    latestRevenue && previousRevenue ? ((latestRevenue - previousRevenue) / previousRevenue) * 100 : undefined;
-  const profitGrowth =
-    latestProfit && previousProfit ? ((latestProfit - previousProfit) / previousProfit) * 100 : undefined;
-  const marketCapCrores = fundamentals?.marketCapCrores;
   const eventSignal = scoreCorporateEventSignal(events);
   const sectorInference = inferSectorFromEvidence(
     {
@@ -84,11 +61,11 @@ export const buildResearchPacketFromIndstocksPosition = (
       isin: position.isin,
       instrumentType: "EQUITY",
     },
-    fundamentals,
+    undefined,
     events,
   );
   const missingSignals: ResearchQuality["missingSignals"] = [
-    ...(fundamentals ? [] : ["fundamentals" as const]),
+    "fundamentals",
     ...(technicalAnalysis ? [] : ["candles" as const]),
     ...(events.length > 0 ? [] : ["events" as const]),
   ];
@@ -117,28 +94,13 @@ export const buildResearchPacketFromIndstocksPosition = (
   const stabilityProfile = clampScore(
     55 -
       absolutePercentChange * 4 +
-      (typeof debtToEquity === "number" ? Math.max(0, 5 - debtToEquity * 10) : 0) +
-      (marketCapCrores && marketCapCrores > 100000 ? 5 : 0) +
       (technicalAnalysis?.volatility20dPct
         ? Math.max(-10, 8 - technicalAnalysis.volatility20dPct / 2)
         : 0),
   );
-  const financialQuality = clampScore(
-    45 +
-      (typeof revenueGrowth === "number" ? Math.max(-10, Math.min(15, revenueGrowth / 2)) : 0) +
-      (typeof profitGrowth === "number" ? Math.max(-10, Math.min(20, profitGrowth / 2)) : 0) +
-      (typeof roe === "number" ? Math.max(0, Math.min(10, roe / 2)) : 0) +
-      (typeof debtToEquity === "number" ? Math.max(-8, 5 - debtToEquity * 10) : 0),
-  );
-  const businessQuality = clampScore(
-    45 +
-      (typeof roce === "number" ? Math.max(0, Math.min(10, roce / 2)) : 0) +
-      (marketCapCrores && marketCapCrores > 100000 ? 8 : marketCapCrores && marketCapCrores > 10000 ? 4 : 0) +
-      (revenueRows.length >= 3 ? 4 : 0),
-  );
-  const managementGovernance = clampScore(
-    45 + (typeof roe === "number" && roe > 12 ? 4 : 0),
-  );
+  const financialQuality = 45;
+  const businessQuality = 45;
+  const managementGovernance = 45;
 
   return {
     runLabel: `indstocks-${position.symbol.toLowerCase()}-research`,
@@ -207,13 +169,8 @@ export const buildIndstocksResearchPacketForPosition = (
     const historicalCandles =
       historicalCandlesOutcome._tag === "Right" ? historicalCandlesOutcome.right : [];
     const technicalAnalysis = analyzeHistoricalCandles(historicalCandles);
-    const fundamentalsOutcome = position.isin
-      ? yield* Effect.either(fetchUpstoxFundamentalsSnapshot(position.isin, fetchImpl))
-      : undefined;
     const eventQuery = position.instrumentName ?? position.symbol.replace(/-EQ$/i, "");
     const eventsOutcome = yield* Effect.either(searchBseAnnouncements(eventQuery, fetchImpl));
-    const fundamentals =
-      fundamentalsOutcome?._tag === "Right" ? fundamentalsOutcome.right : undefined;
     const events = eventsOutcome._tag === "Right" ? eventsOutcome.right : [];
 
     const quote = quoteMap[scripCode];
@@ -238,13 +195,12 @@ export const buildIndstocksResearchPacketForPosition = (
 
     const missingSignals: ResearchQuality["missingSignals"] = [
       ...(hasBrokerQuote ? [] : ["broker_quote" as const]),
-      ...(fundamentals ? [] : ["fundamentals" as const]),
+      "fundamentals",
       ...(technicalAnalysis ? [] : ["candles" as const]),
       ...(events.length > 0 ? [] : ["events" as const]),
     ];
 
     return buildResearchPacketFromIndstocksPosition(enrichedPosition, {
-      ...(fundamentals ? { fundamentals } : {}),
       events,
       ...(technicalAnalysis ? { technicalAnalysis } : {}),
       researchQuality: {

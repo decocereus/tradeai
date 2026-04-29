@@ -27,4 +27,16 @@ describe("tui cli options", () => {
     expect(options.holdingHistoryBroker).toBe("indstocks");
     expect(options.hasExplicitPrimaryAction).toBe(true);
   });
+
+  it("parses Groww-oriented equity search and quote flags", () => {
+    const options = parseTuiCliOptions([
+      "--equity-search",
+      "RELIANCE",
+      "--quote",
+      "RELIANCE,TCS",
+    ]);
+
+    expect(options.equitySearchQuery).toBe("RELIANCE");
+    expect(options.quoteKeys).toEqual(["RELIANCE", "TCS"]);
+  });
 });

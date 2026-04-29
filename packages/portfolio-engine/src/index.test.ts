@@ -146,7 +146,7 @@ describe("portfolio-engine", () => {
         invalidationConditions: [],
       },
       researchQuality: {
-        source: "upstox",
+        source: "market",
         completeness: "complete",
         missingSignals: [],
         fallbacksUsed: [],

@@ -1,20 +1,18 @@
 import {
   buildAftermarketsResearchPacket,
-  buildEquityResearchPacket,
-  buildIndstocksResearchPacketForPosition,
-  buildPublicEquityResearchPacket,
-  buildUpstoxQuoteSnapshot,
+  buildGrowwQuoteSnapshot,
   fetchBseAnnouncements,
+  fetchGrowwHoldings,
+  fetchGrowwInstrumentProfiles,
+  fetchGrowwQuoteSnapshot,
+  fetchGrowwTradeBook,
   fetchIndstocksHoldings,
   fetchIndstocksTradeBook,
-  fetchUpstoxNseInstrumentProfiles,
-  fetchUpstoxQuoteSnapshot,
-  fetchTrueDataQuoteSnapshot,
   loadDemoResearchPacket,
   searchAmfiNavEntries,
   searchBseAnnouncements,
-  searchUpstoxInstrumentProfiles,
-  searchUpstoxInstruments,
+  searchGrowwInstrumentProfiles,
+  searchGrowwInstruments,
 } from "@tradeai/data-sources";
 import {
   hasConfiguredDatabaseUrl,
@@ -37,10 +35,10 @@ import type {
   PortfolioMemorySnapshot,
   PortfolioPositionSnapshot,
   ResearchPacket,
-  UpstoxInstrumentSearchEntry,
-  UpstoxInstrumentProfile,
-  UpstoxQuoteEntry,
-  UpstoxQuoteSnapshot,
+  EquityInstrumentSearchEntry,
+  EquityInstrumentProfile,
+  EquityQuoteEntry,
+  EquityQuoteSnapshot,
 } from "@tradeai/domain";
 import { loadMemoryContext } from "@tradeai/memory";
 import { Effect } from "effect";
@@ -49,11 +47,11 @@ export interface TradeAiRuntimeConfig {
   accessToken?: string;
   brokerAccessToken?: string;
   marketAccessToken?: string;
-  marketDataProvider?: "upstox" | "truedata";
-  researchDataProvider?: "upstox" | "aftermarkets";
+  brokerDataProvider?: "groww" | "indstocks";
+  marketDataProvider?: "groww";
+  researchDataProvider?: "aftermarkets";
+  growwAccessToken?: string;
   aftermarketsApiKey?: string;
-  trueDataUserId?: string;
-  trueDataPassword?: string;
   databaseUrl?: string;
   allowPublicResearchFallback?: boolean;
   persistPortfolioSnapshots?: boolean;
@@ -68,23 +66,23 @@ export interface TradeAiBrokerSources {
 }
 
 export interface TradeAiMarketSources {
-  fetchNseInstrumentProfiles: () => Effect.Effect<readonly UpstoxInstrumentProfile[], Error>;
+  fetchNseInstrumentProfiles: () => Effect.Effect<readonly EquityInstrumentProfile[], Error>;
   searchAmfiNav: (query: string) => Effect.Effect<readonly AmfiNavEntry[], Error>;
   searchCorporateEvents: (query: string) => Effect.Effect<readonly CorporateEvent[], Error>;
   fetchCorporateEvents: () => Effect.Effect<readonly CorporateEvent[], Error>;
-  searchEquityProfiles: (query: string) => Effect.Effect<readonly UpstoxInstrumentProfile[], Error>;
+  searchEquityProfiles: (query: string) => Effect.Effect<readonly EquityInstrumentProfile[], Error>;
   searchEquityInstruments: (
     query: string,
     accessToken?: string,
-  ) => Effect.Effect<readonly UpstoxInstrumentSearchEntry[], Error>;
+  ) => Effect.Effect<readonly EquityInstrumentSearchEntry[], Error>;
   fetchEquityQuotes: (
     instrumentKeys: readonly string[],
     accessToken?: string,
-  ) => Effect.Effect<readonly UpstoxQuoteEntry[], Error>;
+  ) => Effect.Effect<readonly EquityQuoteEntry[], Error>;
   buildEquityQuoteSnapshot: (
-    searchResults: readonly (UpstoxInstrumentSearchEntry | UpstoxInstrumentProfile)[],
-    quotes: readonly UpstoxQuoteEntry[],
-  ) => readonly UpstoxQuoteSnapshot[];
+    searchResults: readonly (EquityInstrumentSearchEntry | EquityInstrumentProfile)[],
+    quotes: readonly EquityQuoteEntry[],
+  ) => readonly EquityQuoteSnapshot[];
 }
 
 export interface TradeAiResearchSources {
@@ -163,56 +161,34 @@ export interface CreateTradeAiWorkflowServiceOptions {
 }
 
 export const defaultTradeAiBrokerSources: TradeAiBrokerSources = {
+  fetchBrokerHoldings: fetchGrowwHoldings,
+  fetchBrokerTradeBook: fetchGrowwTradeBook,
+};
+
+export const indstocksTradeAiBrokerSources: TradeAiBrokerSources = {
   fetchBrokerHoldings: fetchIndstocksHoldings,
   fetchBrokerTradeBook: fetchIndstocksTradeBook,
 };
 
 export const defaultTradeAiMarketSources: TradeAiMarketSources = {
-  fetchNseInstrumentProfiles: fetchUpstoxNseInstrumentProfiles,
+  fetchNseInstrumentProfiles: fetchGrowwInstrumentProfiles,
   searchAmfiNav: searchAmfiNavEntries,
   searchCorporateEvents: searchBseAnnouncements,
   fetchCorporateEvents: fetchBseAnnouncements,
-  searchEquityProfiles: searchUpstoxInstrumentProfiles,
-  searchEquityInstruments: (query, accessToken) =>
-    searchUpstoxInstruments({ query }, accessToken),
-  fetchEquityQuotes: fetchUpstoxQuoteSnapshot,
-  buildEquityQuoteSnapshot: buildUpstoxQuoteSnapshot,
+  searchEquityProfiles: searchGrowwInstrumentProfiles,
+  searchEquityInstruments: (query) => searchGrowwInstruments(query),
+  fetchEquityQuotes: fetchGrowwQuoteSnapshot,
+  buildEquityQuoteSnapshot: buildGrowwQuoteSnapshot,
 };
-
-const normalizeTrueDataSymbol = (query: string) => {
-  const trimmed = query.trim();
-  const withoutExchange = trimmed.includes("|") ? trimmed.split("|").at(-1) ?? trimmed : trimmed;
-  return withoutExchange.replace(/-EQ$/i, "").toUpperCase();
-};
-
-const createTrueDataMarketSources = (
-  config: TradeAiRuntimeConfig,
-): Partial<TradeAiMarketSources> => ({
-  searchEquityInstruments: (query) => {
-    const symbol = normalizeTrueDataSymbol(query);
-    return Effect.succeed([
-      {
-        instrumentKey: symbol,
-        exchange: "NSE",
-        tradingSymbol: symbol,
-        shortName: symbol,
-        instrumentType: "EQ",
-      },
-    ]);
-  },
-  fetchEquityQuotes: (instrumentKeys) =>
-    fetchTrueDataQuoteSnapshot({
-      symbols: instrumentKeys.map(normalizeTrueDataSymbol),
-      ...(config.trueDataUserId ? { userId: config.trueDataUserId } : {}),
-      ...(config.trueDataPassword ? { password: config.trueDataPassword } : {}),
-    }),
-});
 
 export const defaultTradeAiResearchSources: TradeAiResearchSources = {
   loadDemoResearchPacket: () => loadDemoResearchPacket,
-  buildEquityResearchPacket,
-  buildPublicEquityResearchPacket,
-  buildBrokerPositionResearchPacket: buildIndstocksResearchPacketForPosition,
+  buildEquityResearchPacket: (input) =>
+    buildAftermarketsResearchPacket({ query: input.query }),
+  buildPublicEquityResearchPacket: (input) =>
+    buildAftermarketsResearchPacket({ query: input.query }),
+  buildBrokerPositionResearchPacket: (input) =>
+    buildAftermarketsResearchPacket({ query: input.position.symbol }),
 };
 
 export const defaultTradeAiMemorySource: TradeAiMemorySource = {
@@ -236,6 +212,16 @@ const createAftermarketsResearchSources = (
       query: input.query,
       ...(config.aftermarketsApiKey ? { apiKey: config.aftermarketsApiKey } : {}),
     }),
+  buildPublicEquityResearchPacket: (input) =>
+    buildAftermarketsResearchPacket({
+      query: input.query,
+      ...(config.aftermarketsApiKey ? { apiKey: config.aftermarketsApiKey } : {}),
+    }),
+  buildBrokerPositionResearchPacket: (input) =>
+    buildAftermarketsResearchPacket({
+      query: input.position.symbol,
+      ...(config.aftermarketsApiKey ? { apiKey: config.aftermarketsApiKey } : {}),
+    }),
 });
 
 export const createTradeAiWorkflowDependencies = (
@@ -243,14 +229,13 @@ export const createTradeAiWorkflowDependencies = (
 ): TradeAiWorkflowDependencies => ({
   config: options.config ?? {},
   brokerSources: {
-    ...defaultTradeAiBrokerSources,
+    ...(options.config?.brokerDataProvider === "indstocks"
+      ? indstocksTradeAiBrokerSources
+      : defaultTradeAiBrokerSources),
     ...options.brokerSources,
   },
   marketSources: {
     ...defaultTradeAiMarketSources,
-    ...(options.config?.marketDataProvider === "truedata"
-      ? createTrueDataMarketSources(options.config)
-      : {}),
     ...options.marketSources,
   },
   researchSources: {

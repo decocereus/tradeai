@@ -22,9 +22,8 @@ Current scaffold commands:
 Local setup:
 
 - Copy `.env.example` to `.env`
-- Set `INDSTOCKS_ACCESS_TOKEN` from `https://indstocks.com/app/api-trading`
-- Optional: set `UPSTOX_ACCESS_TOKEN`
-- Optional: set `TRADEAI_MARKET_DATA_PROVIDER=truedata` with `TRUEDATA_USER_ID` and `TRUEDATA_PASSWORD`
+- Set `GROWW_ACCESS_TOKEN` from your Groww Trading API subscription, or set `GROWW_API_KEY` and `GROWW_API_SECRET` so TradeAI can generate the daily access token
+- Optional: set `TRADEAI_BROKER_DATA_PROVIDER=indstocks` with `INDSTOCKS_ACCESS_TOKEN` for the legacy broker adapter
 - Optional: set `TRADEAI_RESEARCH_DATA_PROVIDER=aftermarkets` with `AFTERMARKETS_API_KEY`
 - Set `LOG_LEVEL` and `LOG_PRETTY` as desired
 - Start Postgres: `bun run db:start`

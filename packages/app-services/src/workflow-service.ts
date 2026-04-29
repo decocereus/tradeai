@@ -63,8 +63,8 @@ const mergeBrokerPortfolioInput = (
   config: TradeAiRuntimeConfig,
   input: BrokerPortfolioWorkflowInput = {},
 ): BrokerPortfolioWorkflowInput => ({
-  ...(config.brokerAccessToken ?? config.accessToken
-    ? { accessToken: config.brokerAccessToken ?? config.accessToken }
+  ...(config.growwAccessToken ?? config.brokerAccessToken ?? config.accessToken
+    ? { accessToken: config.growwAccessToken ?? config.brokerAccessToken ?? config.accessToken }
     : {}),
   ...(config.databaseUrl ? { databaseUrl: config.databaseUrl } : {}),
   ...(config.persistPortfolioSnapshots !== undefined
@@ -77,8 +77,8 @@ const mergeBrokerTradeBookInput = (
   config: TradeAiRuntimeConfig,
   input: BrokerTradeBookInput = {},
 ): BrokerTradeBookInput => ({
-  ...(config.brokerAccessToken ?? config.accessToken
-    ? { accessToken: config.brokerAccessToken ?? config.accessToken }
+  ...(config.growwAccessToken ?? config.brokerAccessToken ?? config.accessToken
+    ? { accessToken: config.growwAccessToken ?? config.brokerAccessToken ?? config.accessToken }
     : {}),
   ...input,
 });
@@ -134,8 +134,11 @@ const mergeManualPortfolioDecisionInput = (
   input: ManualPortfolioDecisionInput,
 ): ManualPortfolioDecisionInput => ({
   ...input,
-  ...(input.accessToken ?? config.marketAccessToken ?? config.accessToken
-    ? { accessToken: input.accessToken ?? config.marketAccessToken ?? config.accessToken }
+  ...(input.accessToken ?? config.growwAccessToken ?? config.marketAccessToken ?? config.accessToken
+    ? {
+        accessToken:
+          input.accessToken ?? config.growwAccessToken ?? config.marketAccessToken ?? config.accessToken,
+      }
     : {}),
   persistence: {
     ...(config.databaseUrl ? { databaseUrl: config.databaseUrl } : {}),
@@ -160,10 +163,11 @@ const createReviewResearchRunners = (
     runIndstocksPositionResearch(
       {
         ...input,
-        ...(input.accessToken ?? dependencies.config.brokerAccessToken ?? dependencies.config.accessToken
+        ...(input.accessToken ?? dependencies.config.growwAccessToken ?? dependencies.config.brokerAccessToken ?? dependencies.config.accessToken
           ? {
               accessToken:
                 input.accessToken ??
+                dependencies.config.growwAccessToken ??
                 dependencies.config.brokerAccessToken ??
                 dependencies.config.accessToken,
             }
@@ -175,9 +179,12 @@ const createReviewResearchRunners = (
     runEquityResearch(
       {
         ...input,
-        ...(dependencies.config.marketAccessToken ?? dependencies.config.accessToken
+        ...(dependencies.config.growwAccessToken ?? dependencies.config.marketAccessToken ?? dependencies.config.accessToken
           ? {
-              accessToken: dependencies.config.marketAccessToken ?? dependencies.config.accessToken,
+              accessToken:
+                dependencies.config.growwAccessToken ??
+                dependencies.config.marketAccessToken ??
+                dependencies.config.accessToken,
             }
           : {}),
       },
@@ -200,8 +207,8 @@ export const createTradeAiWorkflowService = (
     runEquityResearch: (input: EquityResearchInput) =>
       runEquityResearch(
         {
-          ...(config.marketAccessToken ?? config.accessToken
-            ? { accessToken: config.marketAccessToken ?? config.accessToken }
+          ...(config.growwAccessToken ?? config.marketAccessToken ?? config.accessToken
+            ? { accessToken: config.growwAccessToken ?? config.marketAccessToken ?? config.accessToken }
             : {}),
           ...input,
         },
@@ -214,7 +221,7 @@ export const createTradeAiWorkflowService = (
     getEquityQuoteSnapshots: (input: EquityQuoteSnapshotsInput) =>
       getEquityQuoteSnapshots(
         input.instrumentKeys,
-        input.accessToken ?? config.marketAccessToken ?? config.accessToken,
+        input.accessToken ?? config.growwAccessToken ?? config.marketAccessToken ?? config.accessToken,
         dependencies,
       ),
 

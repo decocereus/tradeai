@@ -7,18 +7,23 @@
 
 ```bash
 DATABASE_URL=postgresql://postgres:postgres@localhost:5433/tradeai
-INDSTOCKS_ACCESS_TOKEN=...
+GROWW_ACCESS_TOKEN=...
 LOG_LEVEL=info
 LOG_PRETTY=true
+```
+
+Instead of a daily `GROWW_ACCESS_TOKEN`, you can set:
+
+```bash
+GROWW_API_KEY=...
+GROWW_API_SECRET=...
 ```
 
 Optional:
 
 ```bash
-UPSTOX_ACCESS_TOKEN=...
-TRADEAI_MARKET_DATA_PROVIDER=truedata
-TRUEDATA_USER_ID=...
-TRUEDATA_PASSWORD=...
+TRADEAI_BROKER_DATA_PROVIDER=indstocks
+INDSTOCKS_ACCESS_TOKEN=...
 TRADEAI_RESEARCH_DATA_PROVIDER=aftermarkets
 AFTERMARKETS_API_KEY=...
 TRADEAI_ALLOW_PUBLIC_RESEARCH_FALLBACK=true
@@ -152,8 +157,7 @@ TRADEAI_RUN_INTEGRATION_TESTS=1 bun run test:integration
 
 Each live case still requires its own env:
 
-- `INDSTOCKS_ACCESS_TOKEN` for broker holdings
-- `UPSTOX_ACCESS_TOKEN` for market quotes
+- `GROWW_ACCESS_TOKEN` for broker holdings and market quotes
 - `DATABASE_URL` for persisted dashboard loading
 - optional `TRADEAI_INTEGRATION_INSTRUMENT_KEY` to override the default quote instrument
 

@@ -10,26 +10,19 @@ const readEnvValue = (name: string): string | undefined => {
   return value ? value : undefined;
 };
 
-const readMarketDataProvider = () => {
-  const provider = readEnvValue("TRADEAI_MARKET_DATA_PROVIDER");
-  return provider === "truedata" ? "truedata" : "upstox";
-};
-
 const buildLiveService = () =>
   createTradeAiWorkflowService({
     config: {
-      marketDataProvider: readMarketDataProvider(),
+      marketDataProvider: "groww",
       ...(readEnvValue("INDSTOCKS_ACCESS_TOKEN")
         ? { brokerAccessToken: readEnvValue("INDSTOCKS_ACCESS_TOKEN") }
         : {}),
-      ...(readEnvValue("UPSTOX_ACCESS_TOKEN")
-        ? { marketAccessToken: readEnvValue("UPSTOX_ACCESS_TOKEN") }
-        : {}),
-      ...(readEnvValue("TRUEDATA_USER_ID")
-        ? { trueDataUserId: readEnvValue("TRUEDATA_USER_ID") }
-        : {}),
-      ...(readEnvValue("TRUEDATA_PASSWORD")
-        ? { trueDataPassword: readEnvValue("TRUEDATA_PASSWORD") }
+      ...(readEnvValue("GROWW_ACCESS_TOKEN")
+        ? {
+            brokerDataProvider: "groww",
+            growwAccessToken: readEnvValue("GROWW_ACCESS_TOKEN"),
+            marketAccessToken: readEnvValue("GROWW_ACCESS_TOKEN"),
+          }
         : {}),
       ...(readEnvValue("DATABASE_URL") ? { databaseUrl: readEnvValue("DATABASE_URL") } : {}),
     },
@@ -41,11 +34,15 @@ const skipReason = (missing: readonly string[]) =>
 const hasRequiredEnv = (names: readonly string[]) =>
   INTEGRATION_ENABLED && names.every((name) => Boolean(readEnvValue(name)));
 
+const hasGrowwAuthEnv = () =>
+  INTEGRATION_ENABLED &&
+  (Boolean(readEnvValue("GROWW_ACCESS_TOKEN")) ||
+    (Boolean(readEnvValue("GROWW_API_KEY")) && Boolean(readEnvValue("GROWW_API_SECRET"))));
+
 describe("integration / workflow service live adapters", () => {
   it("fetches live broker holdings through the service boundary", async () => {
-    const required = ["INDSTOCKS_ACCESS_TOKEN"];
-    if (!hasRequiredEnv(required)) {
-      console.log(skipReason(required));
+    if (!hasGrowwAuthEnv()) {
+      console.log(skipReason(["GROWW_ACCESS_TOKEN or GROWW_API_KEY/GROWW_API_SECRET"]));
       return;
     }
 
@@ -53,28 +50,23 @@ describe("integration / workflow service live adapters", () => {
     const holdings = await Effect.runPromise(tradeAi.getBrokerHoldings());
 
     expect(Array.isArray(holdings)).toBe(true);
-    expect(holdings.every((holding) => holding.broker === "indstocks")).toBe(true);
+    expect(holdings.every((holding) => holding.broker === "groww")).toBe(true);
   });
 
   it("fetches live market quotes through the service boundary", async () => {
-    const provider = readMarketDataProvider();
-    const required =
-      provider === "truedata" ? ["TRUEDATA_USER_ID", "TRUEDATA_PASSWORD"] : ["UPSTOX_ACCESS_TOKEN"];
-    if (!hasRequiredEnv(required)) {
-      console.log(skipReason(required));
+    if (!hasGrowwAuthEnv()) {
+      console.log(skipReason(["GROWW_ACCESS_TOKEN or GROWW_API_KEY/GROWW_API_SECRET"]));
       return;
     }
 
-    const instrumentKey =
-      readEnvValue("TRADEAI_INTEGRATION_INSTRUMENT_KEY") ??
-      (provider === "truedata" ? "RELIANCE" : "NSE_EQ|INE002A01018");
+    const instrumentKey = readEnvValue("TRADEAI_INTEGRATION_INSTRUMENT_KEY") ?? "RELIANCE";
     const tradeAi = buildLiveService();
     const quotes = await Effect.runPromise(
       tradeAi.getEquityQuoteSnapshots({ instrumentKeys: [instrumentKey] }),
     );
 
     expect(quotes.length).toBeGreaterThan(0);
-    expect(quotes.some((quote) => quote.instrumentKey === instrumentKey)).toBe(true);
+    expect(quotes.some((quote) => quote.tradingSymbol === instrumentKey)).toBe(true);
   });
 
   it("loads a persisted dashboard through the repository boundary", async () => {
@@ -87,7 +79,7 @@ describe("integration / workflow service live adapters", () => {
     const tradeAi = buildLiveService();
     const dashboard = await Effect.runPromise(tradeAi.getPortfolioDashboard());
 
-    expect(dashboard.broker === "indstocks" || dashboard.broker === "manual_csv").toBe(true);
+    expect(["groww", "indstocks", "manual_csv"].includes(dashboard.broker)).toBe(true);
     expect(Array.isArray(dashboard.recentSnapshots)).toBe(true);
   });
 });

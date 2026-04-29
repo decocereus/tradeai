@@ -1,10 +1,10 @@
-type BrokerSource = "indstocks" | "manual_csv";
+type BrokerSource = "groww" | "indstocks" | "manual_csv";
 
 export interface TuiCliOptions {
   piPrompt: string | undefined;
   amfiQuery: string | undefined;
-  upstoxSearchQuery: string | undefined;
-  upstoxQuoteKeys: readonly string[] | undefined;
+  equitySearchQuery: string | undefined;
+  quoteKeys: readonly string[] | undefined;
   equityResearchQuery: string | undefined;
   eventsQuery: string | undefined;
   holdingsFlag: boolean;
@@ -46,16 +46,18 @@ const readNextValue = (
 
 const parseBrokerSource = (value: string | undefined): BrokerSource | undefined => {
   const normalized = value?.trim().toLowerCase();
-  return normalized === "indstocks" || normalized === "manual_csv" ? normalized : undefined;
+  return normalized === "groww" || normalized === "indstocks" || normalized === "manual_csv"
+    ? normalized
+    : undefined;
 };
 
 export const parseTuiCliOptions = (args: readonly string[]): TuiCliOptions => {
   const piPrompt = readTrailingText(args, "--pi", "Summarize this repo.");
   const amfiQuery = readTrailingText(args, "--amfi", "parag parikh");
-  const upstoxSearchQuery = readTrailingText(args, "--upstox-search", "reliance");
-  const upstoxQuoteRaw = readTrailingText(args, "--upstox-quote", "");
-  const upstoxQuoteKeys = upstoxQuoteRaw
-    ? upstoxQuoteRaw
+  const equitySearchQuery = readNextValue(args, "--equity-search", "reliance");
+  const quoteRaw = readNextValue(args, "--quote", "");
+  const quoteKeys = quoteRaw
+    ? quoteRaw
         .split(",")
         .map((value) => value.trim())
         .filter(Boolean)
@@ -82,8 +84,8 @@ export const parseTuiCliOptions = (args: readonly string[]): TuiCliOptions => {
   const hasExplicitPrimaryAction =
     Boolean(piPrompt) ||
     Boolean(amfiQuery) ||
-    Boolean(upstoxSearchQuery) ||
-    Boolean(upstoxQuoteKeys?.length) ||
+    Boolean(equitySearchQuery) ||
+    Boolean(quoteKeys?.length) ||
     Boolean(equityResearchQuery) ||
     Boolean(eventsQuery) ||
     holdingsFlag ||
@@ -100,8 +102,8 @@ export const parseTuiCliOptions = (args: readonly string[]): TuiCliOptions => {
   return {
     piPrompt,
     amfiQuery,
-    upstoxSearchQuery,
-    upstoxQuoteKeys,
+    equitySearchQuery,
+    quoteKeys,
     equityResearchQuery,
     eventsQuery,
     holdingsFlag,

@@ -3,7 +3,7 @@ import { Schema } from "effect";
 export const AssetType = Schema.Literal("stock", "etf", "mutual_fund", "gold");
 export type AssetType = Schema.Schema.Type<typeof AssetType>;
 
-export const BrokerSource = Schema.Literal("indstocks", "manual_csv");
+export const BrokerSource = Schema.Literal("groww", "indstocks", "manual_csv");
 export type BrokerSource = Schema.Schema.Type<typeof BrokerSource>;
 
 export const RiskBucket = Schema.Literal("stable", "moderate", "growth", "speculative");
@@ -100,7 +100,7 @@ export type TechnicalAnalysisSnapshot = Schema.Schema.Type<typeof TechnicalAnaly
 export const ResearchQualitySource = Schema.Literal(
   "demo",
   "indstocks",
-  "upstox",
+  "market",
   "aftermarkets",
   "public",
 );
@@ -135,7 +135,7 @@ export type ResearchQuality = Schema.Schema.Type<typeof ResearchQuality>;
 
 export const ResearchPacket = Schema.Struct({
   runLabel: Schema.String,
-  source: Schema.Literal("demo", "upstox_quote", "indstocks_quote", "aftermarkets"),
+  source: Schema.Literal("demo", "market_quote", "indstocks_quote", "aftermarkets"),
   sector: SectorSnapshot,
   instrument: InstrumentSnapshot,
   instrumentIsin: Schema.optional(Schema.String),
@@ -170,7 +170,7 @@ export const AmfiNavEntry = Schema.Struct({
 });
 export type AmfiNavEntry = Schema.Schema.Type<typeof AmfiNavEntry>;
 
-export const UpstoxInstrumentSearchEntry = Schema.Struct({
+export const EquityInstrumentSearchEntry = Schema.Struct({
   instrumentKey: Schema.String,
   exchange: Schema.String,
   tradingSymbol: Schema.String,
@@ -178,9 +178,9 @@ export const UpstoxInstrumentSearchEntry = Schema.Struct({
   instrumentType: Schema.String,
   isin: Schema.optional(Schema.String),
 });
-export type UpstoxInstrumentSearchEntry = Schema.Schema.Type<typeof UpstoxInstrumentSearchEntry>;
+export type EquityInstrumentSearchEntry = Schema.Schema.Type<typeof EquityInstrumentSearchEntry>;
 
-export const UpstoxQuoteEntry = Schema.Struct({
+export const EquityQuoteEntry = Schema.Struct({
   instrumentKey: Schema.String,
   tradingSymbol: Schema.optional(Schema.String),
   lastPrice: Schema.Number,
@@ -188,9 +188,9 @@ export const UpstoxQuoteEntry = Schema.Struct({
   volume: Schema.optional(Schema.Number),
   openInterest: Schema.optional(Schema.Number),
 });
-export type UpstoxQuoteEntry = Schema.Schema.Type<typeof UpstoxQuoteEntry>;
+export type EquityQuoteEntry = Schema.Schema.Type<typeof EquityQuoteEntry>;
 
-export const UpstoxQuoteSnapshot = Schema.Struct({
+export const EquityQuoteSnapshot = Schema.Struct({
   instrumentKey: Schema.String,
   tradingSymbol: Schema.String,
   shortName: Schema.String,
@@ -202,9 +202,9 @@ export const UpstoxQuoteSnapshot = Schema.Struct({
   openInterest: Schema.optional(Schema.Number),
   isin: Schema.optional(Schema.String),
 });
-export type UpstoxQuoteSnapshot = Schema.Schema.Type<typeof UpstoxQuoteSnapshot>;
+export type EquityQuoteSnapshot = Schema.Schema.Type<typeof EquityQuoteSnapshot>;
 
-export const UpstoxInstrumentProfile = Schema.Struct({
+export const EquityInstrumentProfile = Schema.Struct({
   instrumentKey: Schema.String,
   exchange: Schema.String,
   tradingSymbol: Schema.String,
@@ -222,30 +222,30 @@ export const UpstoxInstrumentProfile = Schema.Struct({
   intradayMargin: Schema.optional(Schema.Number),
   intradayLeverage: Schema.optional(Schema.Number),
 });
-export type UpstoxInstrumentProfile = Schema.Schema.Type<typeof UpstoxInstrumentProfile>;
+export type EquityInstrumentProfile = Schema.Schema.Type<typeof EquityInstrumentProfile>;
 
-export const UpstoxFundamentalMetric = Schema.Struct({
+export const EquityFundamentalMetric = Schema.Struct({
   label: Schema.String,
   value: Schema.String,
 });
-export type UpstoxFundamentalMetric = Schema.Schema.Type<typeof UpstoxFundamentalMetric>;
+export type EquityFundamentalMetric = Schema.Schema.Type<typeof EquityFundamentalMetric>;
 
-export const UpstoxRevenueStatementRow = Schema.Struct({
+export const EquityRevenueStatementRow = Schema.Struct({
   year: Schema.String,
   revenueCrores: Schema.Number,
   operatingProfitCrores: Schema.Number,
   netProfitCrores: Schema.Number,
 });
-export type UpstoxRevenueStatementRow = Schema.Schema.Type<typeof UpstoxRevenueStatementRow>;
+export type EquityRevenueStatementRow = Schema.Schema.Type<typeof EquityRevenueStatementRow>;
 
-export const UpstoxFundamentalsSnapshot = Schema.Struct({
+export const EquityFundamentalsSnapshot = Schema.Struct({
   isin: Schema.String,
   companyName: Schema.optional(Schema.String),
   marketCapCrores: Schema.optional(Schema.Number),
-  fundamentalMetrics: Schema.Array(UpstoxFundamentalMetric),
-  revenueStatement: Schema.Array(UpstoxRevenueStatementRow),
+  fundamentalMetrics: Schema.Array(EquityFundamentalMetric),
+  revenueStatement: Schema.Array(EquityRevenueStatementRow),
 });
-export type UpstoxFundamentalsSnapshot = Schema.Schema.Type<typeof UpstoxFundamentalsSnapshot>;
+export type EquityFundamentalsSnapshot = Schema.Schema.Type<typeof EquityFundamentalsSnapshot>;
 
 export const CorporateEvent = Schema.Struct({
   source: Schema.Literal("bse_announcements"),

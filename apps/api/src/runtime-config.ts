@@ -14,13 +14,13 @@ const readEnvBoolean = (name: string): boolean | undefined => {
 };
 
 export const buildRuntimeConfigFromEnv = (): TradeAiRuntimeConfig => {
+  const growwAccessToken = readEnvValue("GROWW_ACCESS_TOKEN");
   const brokerAccessToken = readEnvValue("INDSTOCKS_ACCESS_TOKEN");
-  const marketAccessToken = readEnvValue("UPSTOX_ACCESS_TOKEN");
+  const marketAccessToken = readEnvValue("GROWW_ACCESS_TOKEN");
+  const brokerDataProvider = readEnvValue("TRADEAI_BROKER_DATA_PROVIDER");
   const marketDataProvider = readEnvValue("TRADEAI_MARKET_DATA_PROVIDER");
   const researchDataProvider = readEnvValue("TRADEAI_RESEARCH_DATA_PROVIDER");
   const aftermarketsApiKey = readEnvValue("AFTERMARKETS_API_KEY");
-  const trueDataUserId = readEnvValue("TRUEDATA_USER_ID");
-  const trueDataPassword = readEnvValue("TRUEDATA_PASSWORD");
   const databaseUrl = readEnvValue("DATABASE_URL");
   const allowPublicResearchFallback = readEnvBoolean(
     "TRADEAI_ALLOW_PUBLIC_RESEARCH_FALLBACK",
@@ -28,17 +28,19 @@ export const buildRuntimeConfigFromEnv = (): TradeAiRuntimeConfig => {
   const persistPortfolioSnapshots = readEnvBoolean("TRADEAI_PERSIST_PORTFOLIO_SNAPSHOTS");
 
   return {
+    ...(growwAccessToken ? { growwAccessToken } : {}),
     ...(brokerAccessToken ? { brokerAccessToken } : {}),
     ...(marketAccessToken ? { marketAccessToken } : {}),
-    ...(marketDataProvider === "truedata" || marketDataProvider === "upstox"
+    ...(brokerDataProvider === "groww" || brokerDataProvider === "indstocks"
+      ? { brokerDataProvider }
+      : {}),
+    ...(marketDataProvider === "groww"
       ? { marketDataProvider }
       : {}),
-    ...(researchDataProvider === "aftermarkets" || researchDataProvider === "upstox"
+    ...(researchDataProvider === "aftermarkets"
       ? { researchDataProvider }
       : {}),
     ...(aftermarketsApiKey ? { aftermarketsApiKey } : {}),
-    ...(trueDataUserId ? { trueDataUserId } : {}),
-    ...(trueDataPassword ? { trueDataPassword } : {}),
     ...(databaseUrl ? { databaseUrl } : {}),
     ...(allowPublicResearchFallback !== undefined ? { allowPublicResearchFallback } : {}),
     ...(persistPortfolioSnapshots !== undefined ? { persistPortfolioSnapshots } : {}),

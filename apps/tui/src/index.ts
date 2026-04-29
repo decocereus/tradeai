@@ -24,8 +24,8 @@ import { renderDashboardSection, renderDivider, renderList } from "./render.ts";
 const {
   piPrompt,
   amfiQuery,
-  upstoxSearchQuery,
-  upstoxQuoteKeys,
+  equitySearchQuery,
+  quoteKeys,
   equityResearchQuery,
   eventsQuery,
   holdingsFlag,
@@ -60,12 +60,12 @@ const readEnvBoolean = (name: string): boolean | undefined => {
 
 const buildTuiRuntimeConfig = (): TradeAiRuntimeConfig => {
   const brokerAccessToken = readEnvValue("INDSTOCKS_ACCESS_TOKEN");
-  const marketAccessToken = readEnvValue("UPSTOX_ACCESS_TOKEN");
+  const growwAccessToken = readEnvValue("GROWW_ACCESS_TOKEN");
+  const marketAccessToken = readEnvValue("GROWW_ACCESS_TOKEN");
+  const brokerDataProvider = readEnvValue("TRADEAI_BROKER_DATA_PROVIDER");
   const marketDataProvider = readEnvValue("TRADEAI_MARKET_DATA_PROVIDER");
   const researchDataProvider = readEnvValue("TRADEAI_RESEARCH_DATA_PROVIDER");
   const aftermarketsApiKey = readEnvValue("AFTERMARKETS_API_KEY");
-  const trueDataUserId = readEnvValue("TRUEDATA_USER_ID");
-  const trueDataPassword = readEnvValue("TRUEDATA_PASSWORD");
   const databaseUrl = readEnvValue("DATABASE_URL");
   const allowPublicResearchFallback = readEnvBoolean(
     "TRADEAI_ALLOW_PUBLIC_RESEARCH_FALLBACK",
@@ -73,17 +73,19 @@ const buildTuiRuntimeConfig = (): TradeAiRuntimeConfig => {
   const persistPortfolioSnapshots = readEnvBoolean("TRADEAI_PERSIST_PORTFOLIO_SNAPSHOTS");
 
   return {
+    ...(growwAccessToken ? { growwAccessToken } : {}),
     ...(brokerAccessToken ? { brokerAccessToken } : {}),
     ...(marketAccessToken ? { marketAccessToken } : {}),
-    ...(marketDataProvider === "truedata" || marketDataProvider === "upstox"
+    ...(brokerDataProvider === "groww" || brokerDataProvider === "indstocks"
+      ? { brokerDataProvider }
+      : {}),
+    ...(marketDataProvider === "groww"
       ? { marketDataProvider }
       : {}),
-    ...(researchDataProvider === "aftermarkets" || researchDataProvider === "upstox"
+    ...(researchDataProvider === "aftermarkets"
       ? { researchDataProvider }
       : {}),
     ...(aftermarketsApiKey ? { aftermarketsApiKey } : {}),
-    ...(trueDataUserId ? { trueDataUserId } : {}),
-    ...(trueDataPassword ? { trueDataPassword } : {}),
     ...(databaseUrl ? { databaseUrl } : {}),
     ...(allowPublicResearchFallback !== undefined ? { allowPublicResearchFallback } : {}),
     ...(persistPortfolioSnapshots !== undefined ? { persistPortfolioSnapshots } : {}),
@@ -194,50 +196,50 @@ const main = Effect.gen(function* () {
     console.log("Hint: run with `--amfi <scheme name or code>` to query the AMFI NAV feed.");
   }
 
-  if (upstoxSearchQuery) {
-    const upstoxSearchResults = yield* tradeAi.searchEquities(upstoxSearchQuery).pipe(
+  if (equitySearchQuery) {
+    const equitySearchResults = yield* tradeAi.searchEquities(equitySearchQuery).pipe(
       Effect.catchAll((error) => {
-        console.log("\nUpstox equity search error");
+        console.log("\nEquity search error");
         console.log(error instanceof Error ? error.message : String(error));
         return Effect.succeed([]);
       }),
     );
 
     renderDivider("Equity Search");
-    console.log(`Query: ${upstoxSearchQuery}`);
-    if (upstoxSearchResults.length === 0) {
+    console.log(`Query: ${equitySearchQuery}`);
+    if (equitySearchResults.length === 0) {
       console.log("No matching equity instruments found.");
     } else {
-      for (const entry of upstoxSearchResults.slice(0, 5)) {
+      for (const entry of equitySearchResults.slice(0, 5)) {
         console.log(`- ${entry.instrumentKey} | ${entry.tradingSymbol} | ${entry.shortName}`);
       }
     }
   } else {
-    console.log("Hint: run with `--upstox-search <query>` to search equities through Upstox.");
+    console.log("Hint: run with `--equity-search <query>` to search equities.");
   }
 
-  if (upstoxQuoteKeys?.length) {
-    const upstoxQuoteResults = yield* tradeAi.getEquityQuoteSnapshots({
-      instrumentKeys: upstoxQuoteKeys,
+  if (quoteKeys?.length) {
+    const quoteResults = yield* tradeAi.getEquityQuoteSnapshots({
+      instrumentKeys: quoteKeys,
     }).pipe(
       Effect.catchAll((error) => {
-        console.log("\nUpstox quote error");
+        console.log("\nQuote error");
         console.log(error instanceof Error ? error.message : String(error));
         return Effect.succeed([]);
       }),
     );
 
     renderDivider("Quote Snapshots");
-    console.log(`Instrument keys: ${upstoxQuoteKeys.join(", ")}`);
-    if (upstoxQuoteResults.length === 0) {
+    console.log(`Instrument keys: ${quoteKeys.join(", ")}`);
+    if (quoteResults.length === 0) {
       console.log("No quote snapshots returned.");
     } else {
-      for (const entry of upstoxQuoteResults.slice(0, 5)) {
+      for (const entry of quoteResults.slice(0, 5)) {
         console.log(`- ${summarizeQuoteSnapshot(entry.instrumentKey, entry.tradingSymbol, entry.lastPrice)}`);
       }
     }
   } else {
-    console.log("Hint: run with `--upstox-quote <instrument_key[,instrument_key]>` to fetch quote snapshots.");
+    console.log("Hint: run with `--quote <symbol[,symbol]>` to fetch quote snapshots.");
   }
 
   if (equityResearchQuery) {

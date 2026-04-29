@@ -6,7 +6,6 @@
     "@tradeai/domain": "workspace:*",
     "@tradeai/market-analysis": "workspace:*",
     "@tradeai/strategy-engine": "workspace:*",
-    "effect": "^3.21.0",
-    "truedata-nodejs": "^1.1.0"
+    "effect": "^3.21.0"
   }
 }

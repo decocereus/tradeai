@@ -5,7 +5,7 @@ import { buildResearchResult } from "./research-workflows.ts";
 
 export const customResearchPacket = {
   runLabel: "custom-packet",
-  source: "upstox_quote",
+  source: "market_quote",
   sector: {
     slug: "unclassified",
     name: "Unclassified",

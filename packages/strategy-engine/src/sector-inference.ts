@@ -1,8 +1,8 @@
 import type {
   CorporateEvent,
   SectorInference,
-  UpstoxFundamentalsSnapshot,
-  UpstoxInstrumentProfile,
+  EquityFundamentalsSnapshot,
+  EquityInstrumentProfile,
 } from "@tradeai/domain";
 
 interface SectorRule {
@@ -32,8 +32,8 @@ const scoreTextAgainstRule = (text: string, rule: SectorRule): number => {
 };
 
 export const inferSectorFromEvidence = (
-  profile: UpstoxInstrumentProfile,
-  fundamentals?: UpstoxFundamentalsSnapshot,
+  profile: EquityInstrumentProfile,
+  fundamentals?: EquityFundamentalsSnapshot,
   events: readonly CorporateEvent[] = [],
 ): SectorInference => {
   const evidenceTexts = [
