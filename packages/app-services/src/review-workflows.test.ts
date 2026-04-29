@@ -151,6 +151,35 @@ describe("app-services / review workflows", () => {
     expect(report.reviews[0]?.researchQuality?.missingSignals).toContain("memory");
   });
 
+  it("reviews funds and ETFs as allocation holdings instead of equity research calls", async () => {
+    const holdingsPath = "/tmp/tradeai-allocation-review-holdings.csv";
+
+    await Bun.write(
+      holdingsPath,
+      [
+        "symbol,isin,exchange_segment,quantity,average_price,last_traded_price,close_price,market_value,pnl_absolute,pnl_percent",
+        "NIFTYBEES,INF204KB14I2,NSE_EQ,10,270,275,275,2750,50,1.85",
+      ].join("\n"),
+    );
+
+    const report = await Effect.runPromise(
+      reviewImportedPortfolioAgainstResearch({
+        holdingsCsvPath: holdingsPath,
+        options: {
+          researchRunners: {
+            runBrokerPositionResearch: () => Effect.fail(new Error("unexpected broker research")),
+            runAuthenticatedEquityResearch: () => Effect.fail(new Error("unexpected equity research")),
+            runPublicEquityResearch: () => Effect.fail(new Error("unexpected public research")),
+          },
+        },
+      }),
+    );
+
+    expect(report.reviewCount).toBe(1);
+    expect(report.reviews[0]?.reason).toContain("ETF holding");
+    expect(report.reviews[0]?.reason).toContain("portfolio allocation");
+  });
+
   it("can fail closed instead of falling back to public research", async () => {
     const holdingsPath = "/tmp/tradeai-manual-review-fail-closed-holdings.csv";
     const publicResearch = await buildMockResearchResult({

@@ -1,10 +1,12 @@
 import type {
+  AssetType,
   BrokerPortfolioReviewReport,
   BrokerSource,
   HoldingResearchReview,
   HoldingReviewHistoryEntry,
   HoldingReviewTrend,
   HoldingStatusChange,
+  PortfolioAssetAllocation,
   PortfolioDashboardReport,
   PortfolioHoldingSnapshotSummary,
   PortfolioPositionSnapshot,
@@ -28,6 +30,18 @@ const DASHBOARD_STREAK_LIMIT = 5;
 const DASHBOARD_HOLDING_LIMIT = 5;
 const defaultDependencies = createTradeAiWorkflowDependencies();
 
+const resolvePositionAssetType = (position: PortfolioPositionSnapshot): AssetType => {
+  if (position.assetType) return position.assetType;
+  if (position.exchangeSegment === "MF") return "mutual_fund";
+
+  const symbol = position.symbol.toUpperCase();
+  const name = position.instrumentName?.toUpperCase() ?? "";
+  const isin = position.isin.toUpperCase();
+  if (symbol.includes("GOLD") || name.includes("GOLD")) return "gold";
+  if (symbol.endsWith("BEES") || isin.startsWith("INF")) return "etf";
+  return "stock";
+};
+
 const toHoldingResearchReview = (entry: HoldingReviewHistoryEntry): HoldingResearchReview => ({
   symbol: entry.symbol,
   query: entry.query,
@@ -43,6 +57,7 @@ const toPortfolioHoldingSnapshotSummary = (
   position: PortfolioPositionSnapshot,
 ): PortfolioHoldingSnapshotSummary => ({
   symbol: position.symbol,
+  assetType: resolvePositionAssetType(position),
   ...(position.instrumentName ? { instrumentName: position.instrumentName } : {}),
   marketValue: position.marketValue,
   pnlAbsolute: position.pnlAbsolute,
@@ -50,6 +65,37 @@ const toPortfolioHoldingSnapshotSummary = (
   quantity: position.quantity,
   ...(position.priceProvenance ? { priceProvenance: position.priceProvenance } : {}),
 });
+
+export const buildAssetAllocation = (
+  positions: readonly PortfolioPositionSnapshot[],
+): PortfolioAssetAllocation[] => {
+  const totalMarketValue = positions.reduce((sum, position) => sum + position.marketValue, 0);
+  const byAssetType = new Map<PortfolioAssetAllocation["assetType"], {
+    holdingsCount: number;
+    marketValue: number;
+  }>();
+
+  for (const position of positions) {
+    const assetType = resolvePositionAssetType(position);
+    const current = byAssetType.get(assetType) ?? {
+      holdingsCount: 0,
+      marketValue: 0,
+    };
+    byAssetType.set(assetType, {
+      holdingsCount: current.holdingsCount + 1,
+      marketValue: current.marketValue + position.marketValue,
+    });
+  }
+
+  return [...byAssetType.entries()]
+    .map(([assetType, value]) => ({
+      assetType,
+      holdingsCount: value.holdingsCount,
+      marketValue: value.marketValue,
+      percentage: totalMarketValue > 0 ? (value.marketValue / totalMarketValue) * 100 : 0,
+    }))
+    .sort((left, right) => right.marketValue - left.marketValue);
+};
 
 export const buildPortfolioHoldingLeaders = (
   positions: readonly PortfolioPositionSnapshot[],
@@ -212,7 +258,9 @@ export const getPortfolioDashboard = (
       })
       .slice(0, DASHBOARD_STREAK_LIMIT);
 
-    const { topWinners, topLosers } = buildPortfolioHoldingLeaders(latestSnapshot?.positions ?? []);
+    const latestPositions = latestSnapshot?.positions ?? [];
+    const { topWinners, topLosers } = buildPortfolioHoldingLeaders(latestPositions);
+    const assetAllocation = buildAssetAllocation(latestPositions);
     const latestDiff =
       latestSnapshot && previousSnapshot
         ? diffPortfolioMemorySnapshots(previousSnapshot, latestSnapshot)
@@ -247,6 +295,7 @@ export const getPortfolioDashboard = (
       recentSnapshots,
       ...(latestReview ? { latestReview } : {}),
       ...(latestDiff ? { latestDiff } : {}),
+      assetAllocation,
       topWinners,
       topLosers,
       topConflicts,

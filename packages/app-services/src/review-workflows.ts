@@ -1,4 +1,5 @@
 import type {
+  AssetType,
   BrokerPortfolioDecisionReport,
   BrokerPortfolioReviewReport,
   BrokerSource,
@@ -40,6 +41,17 @@ import {
 
 const log = createLogger("app-services");
 const defaultDependencies = createTradeAiWorkflowDependencies();
+
+const resolvePositionAssetType = (position: PortfolioPositionSnapshot): AssetType => {
+  if (position.assetType) return position.assetType;
+  if (position.exchangeSegment === "MF") return "mutual_fund";
+
+  const symbol = position.symbol.toUpperCase();
+  const isin = position.isin.toUpperCase();
+  if (symbol.includes("GOLD")) return "gold";
+  if (symbol.endsWith("BEES") || isin.startsWith("INF")) return "etf";
+  return "stock";
+};
 
 export interface ReviewResearchRunners {
   runBrokerPositionResearch: (
@@ -194,6 +206,24 @@ export const reviewPortfolioPositionsAgainstResearch = (input: ReviewPortfolioPo
       input.positions,
       (position) =>
         Effect.gen(function* () {
+          const assetType = resolvePositionAssetType(position);
+          if (assetType !== "stock") {
+            const allocationRole =
+              assetType === "mutual_fund"
+                ? "mutual fund"
+                : assetType === "etf"
+                  ? "ETF"
+                  : assetType === "gold"
+                    ? "gold allocation"
+                    : assetType;
+            return {
+              symbol: position.symbol,
+              query: position.symbol,
+              status: "review" as const,
+              reason: `${allocationRole} holding: review as portfolio allocation, not as a single-stock conviction call. Evidence: value=${position.marketValue.toFixed(2)}, pnl=${position.pnlPercent.toFixed(2)}%, priceSource=${position.priceProvenance?.marketDataProvider ?? "unknown"}.`,
+            };
+          }
+
           if (input.broker === "indstocks" && position.securityId) {
             const indstocksOutcome = yield* Effect.either(
               researchRunners.runBrokerPositionResearch({

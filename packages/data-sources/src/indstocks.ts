@@ -149,6 +149,7 @@ export const mapIndstocksHolding = (
 
   return {
     broker: "indstocks",
+    ...(record.security_id ? {} : { assetType: "mutual_fund" as const }),
     securityId,
     tradingSymbol,
     exchangeSegment: record.security_id ? exchangeSegment : "MF",

@@ -1,12 +1,49 @@
 import { describe, expect, it } from "bun:test";
 
 import {
+  buildAssetAllocation,
   buildHoldingStatusChanges,
   buildPortfolioHoldingLeaders,
   buildTodaysActionList,
 } from "./dashboard-workflows.ts";
 
 describe("app-services / dashboard workflows", () => {
+  it("builds asset allocation from latest positions", () => {
+    const allocation = buildAssetAllocation([
+      {
+        symbol: "VEDL",
+        assetType: "stock",
+        isin: "INE205A01025",
+        exchangeSegment: "NSE_EQ",
+        quantity: 1,
+        averagePrice: 100,
+        lastTradedPrice: 100,
+        closePrice: 100,
+        marketValue: 100,
+        pnlAbsolute: 0,
+        pnlPercent: 0,
+        sourceBroker: "indstocks",
+      },
+      {
+        symbol: "NIFTYBEES",
+        assetType: "etf",
+        isin: "INF204KB14I2",
+        exchangeSegment: "NSE_EQ",
+        quantity: 1,
+        averagePrice: 300,
+        lastTradedPrice: 300,
+        closePrice: 300,
+        marketValue: 300,
+        pnlAbsolute: 0,
+        pnlPercent: 0,
+        sourceBroker: "indstocks",
+      },
+    ]);
+
+    expect(allocation[0]).toMatchObject({ assetType: "etf", holdingsCount: 1, percentage: 75 });
+    expect(allocation[1]).toMatchObject({ assetType: "stock", holdingsCount: 1, percentage: 25 });
+  });
+
   it("builds portfolio holding leaders from snapshot positions", () => {
     const leaders = buildPortfolioHoldingLeaders([
       {

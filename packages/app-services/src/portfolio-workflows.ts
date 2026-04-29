@@ -127,8 +127,14 @@ const enrichMutualFundHolding = (
 
 const summarizePriceEnrichment = (
   positions: readonly PortfolioPositionSnapshot[],
-  marketDataProvider: MarketDataProvider,
 ): NonNullable<PortfolioSyncReport["priceEnrichment"]> => {
+  const providers = new Set(
+    positions
+      .map((position) => position.priceProvenance?.marketDataProvider)
+      .filter((provider): provider is MarketDataProvider => Boolean(provider)),
+  );
+  const marketDataProvider =
+    providers.size === 1 ? [...providers][0] ?? "groww" : "mixed";
   const enrichedPositions = positions.filter(
     (position) => position.priceProvenance?.status === "market_enriched",
   ).length;
@@ -349,10 +355,7 @@ export const buildPortfolioSyncReport = (
 ): PortfolioSyncReport => {
   const diff = diffPortfolioMemorySnapshots(previous, current);
   const priceEnrichment = current.positions.some((position) => position.priceProvenance)
-    ? summarizePriceEnrichment(
-        current.positions,
-        current.positions.find((position) => position.priceProvenance?.marketDataProvider)?.priceProvenance?.marketDataProvider ?? "groww",
-      )
+    ? summarizePriceEnrichment(current.positions)
     : undefined;
   return {
     broker: current.broker,

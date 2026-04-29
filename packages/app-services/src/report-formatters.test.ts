@@ -74,6 +74,7 @@ describe("app-services / report formatters", () => {
       },
       topWinners: [],
       topLosers: [],
+      assetAllocation: [],
       topConflicts: [],
       topReviewCandidates: [],
       statusChanges: [],

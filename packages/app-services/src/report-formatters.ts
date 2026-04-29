@@ -122,6 +122,7 @@ export const summarizePortfolioDashboardReport = (report: PortfolioDashboardRepo
     report.latestReview
       ? `partialResearch=${report.latestReview.reviews.filter((review) => review.researchQuality?.completeness !== "complete").length}`
       : "partialResearch=0",
+    `assetMix=${report.assetAllocation.map((entry) => `${entry.assetType}:${entry.percentage.toFixed(1)}%`).join(",") || "none"}`,
     `topWinners=${report.topWinners.length}`,
     `topLosers=${report.topLosers.length}`,
     `topConflicts=${report.topConflicts.length}`,

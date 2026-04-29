@@ -6,7 +6,7 @@ export type AssetType = Schema.Schema.Type<typeof AssetType>;
 export const BrokerSource = Schema.Literal("groww", "indstocks", "manual_csv");
 export type BrokerSource = Schema.Schema.Type<typeof BrokerSource>;
 
-export const MarketDataProvider = Schema.Literal("groww", "amfi");
+export const MarketDataProvider = Schema.Literal("groww", "amfi", "mixed");
 export type MarketDataProvider = Schema.Schema.Type<typeof MarketDataProvider>;
 
 export const RiskBucket = Schema.Literal("stable", "moderate", "growth", "speculative");
@@ -262,6 +262,7 @@ export type CorporateEvent = Schema.Schema.Type<typeof CorporateEvent>;
 
 export const BrokerHolding = Schema.Struct({
   broker: BrokerSource,
+  assetType: Schema.optional(AssetType),
   securityId: Schema.String,
   tradingSymbol: Schema.String,
   instrumentName: Schema.optional(Schema.String),
@@ -300,6 +301,7 @@ export type BrokerTradeFill = Schema.Schema.Type<typeof BrokerTradeFill>;
 
 export const PortfolioPositionSnapshot = Schema.Struct({
   symbol: Schema.String,
+  assetType: Schema.optional(AssetType),
   securityId: Schema.optional(Schema.String),
   instrumentName: Schema.optional(Schema.String),
   isin: Schema.String,
@@ -367,6 +369,14 @@ export const PortfolioSnapshotReference = Schema.Struct({
   capturedAt: Schema.String,
 });
 export type PortfolioSnapshotReference = Schema.Schema.Type<typeof PortfolioSnapshotReference>;
+
+export const PortfolioAssetAllocation = Schema.Struct({
+  assetType: AssetType,
+  holdingsCount: Schema.Number,
+  marketValue: Schema.Number,
+  percentage: Schema.Number,
+});
+export type PortfolioAssetAllocation = Schema.Schema.Type<typeof PortfolioAssetAllocation>;
 
 export const PortfolioSyncReport = Schema.Struct({
   broker: BrokerSource,
@@ -452,6 +462,7 @@ export type HoldingReviewTrend = Schema.Schema.Type<typeof HoldingReviewTrend>;
 
 export const PortfolioHoldingSnapshotSummary = Schema.Struct({
   symbol: Schema.String,
+  assetType: Schema.optional(AssetType),
   instrumentName: Schema.optional(Schema.String),
   marketValue: Schema.Number,
   pnlAbsolute: Schema.Number,
@@ -493,6 +504,7 @@ export const PortfolioDashboardReport = Schema.Struct({
   recentSnapshots: Schema.Array(PortfolioSnapshotReference),
   latestReview: Schema.optional(BrokerPortfolioReviewReport),
   latestDiff: Schema.optional(PortfolioSnapshotDiff),
+  assetAllocation: Schema.Array(PortfolioAssetAllocation),
   topWinners: Schema.Array(PortfolioHoldingSnapshotSummary),
   topLosers: Schema.Array(PortfolioHoldingSnapshotSummary),
   topConflicts: Schema.Array(HoldingResearchReview),

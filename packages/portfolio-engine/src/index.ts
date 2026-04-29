@@ -1,4 +1,5 @@
 import type {
+  AssetType,
   BrokerHolding,
   DailyResearchResult,
   HoldingResearchReview,
@@ -40,11 +41,25 @@ export const scorePortfolioFit = (
   };
 };
 
+export const inferHoldingAssetType = (holding: BrokerHolding): AssetType => {
+  if (holding.assetType) return holding.assetType;
+  if (holding.exchangeSegment === "MF") return "mutual_fund";
+
+  const symbol = holding.tradingSymbol.toUpperCase();
+  const name = holding.instrumentName?.toUpperCase() ?? "";
+  const isin = holding.isin.toUpperCase();
+
+  if (symbol.includes("GOLD") || name.includes("GOLD")) return "gold";
+  if (symbol.endsWith("BEES") || isin.startsWith("INF")) return "etf";
+  return "stock";
+};
+
 export const normalizeBrokerHoldings = (
   holdings: readonly BrokerHolding[],
 ): PortfolioPositionSnapshot[] =>
   holdings.map((holding) => ({
     symbol: holding.tradingSymbol,
+    assetType: inferHoldingAssetType(holding),
     ...(holding.securityId ? { securityId: holding.securityId } : {}),
     ...(holding.instrumentName ? { instrumentName: holding.instrumentName } : {}),
     isin: holding.isin,

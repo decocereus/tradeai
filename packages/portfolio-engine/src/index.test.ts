@@ -6,6 +6,7 @@ import {
   assessPositionAgainstResearch,
   deriveResearchQueryFromPositionSymbol,
   diffPortfolioPositions,
+  inferHoldingAssetType,
   normalizeBrokerHoldings,
   scorePortfolioFit,
   summarizeHoldingResearchReviews,
@@ -52,8 +53,30 @@ describe("portfolio-engine", () => {
     const positions = normalizeBrokerHoldings(holdings);
     expect(positions).toHaveLength(1);
     expect(positions[0]?.symbol).toBe("RELIANCE-EQ");
+    expect(positions[0]?.assetType).toBe("stock");
     expect(positions[0]?.securityId).toBe("12345");
     expect(positions[0]?.instrumentName).toBe("Reliance Industries Limited");
+  });
+
+  it("classifies ETFs, gold, and mutual funds from broker holdings", () => {
+    const baseHolding: BrokerHolding = {
+      broker: "indstocks",
+      securityId: "id",
+      tradingSymbol: "NIFTYBEES",
+      exchangeSegment: "NSE_EQ",
+      isin: "INF204KB14I2",
+      quantity: 1,
+      averagePrice: 1,
+      lastTradedPrice: 1,
+      closePrice: 1,
+      marketValue: 1,
+      pnlAbsolute: 0,
+      pnlPercent: 0,
+    };
+
+    expect(inferHoldingAssetType(baseHolding)).toBe("etf");
+    expect(inferHoldingAssetType({ ...baseHolding, tradingSymbol: "TATAGOLD" })).toBe("gold");
+    expect(inferHoldingAssetType({ ...baseHolding, exchangeSegment: "MF" })).toBe("mutual_fund");
   });
 
   it("summarizes normalized positions", () => {

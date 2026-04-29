@@ -20,6 +20,8 @@ const formatPriceProvenance = (
   return ` | price fallback:${provenance.quoteSymbol ?? provenance.status}`;
 };
 
+const formatAssetType = (assetType?: string) => assetType?.replace("_", " ") ?? "unknown";
+
 export const renderList = (title: string, items: readonly string[]) => {
   console.log(`\n${title}`);
   for (const item of items) {
@@ -39,6 +41,10 @@ export const renderDashboardSection = (
 ) => {
   const formatHoldingLabel = (symbol: string, instrumentName?: string) =>
     `${symbol}${instrumentName ? ` (${instrumentName})` : ""}`;
+  const formatHoldingSummary = (
+    position: PortfolioDashboardReport["topWinners"][number],
+  ) =>
+    `${formatHoldingLabel(position.symbol, position.instrumentName)} | ${formatAssetType(position.assetType)} | pnl ${position.pnlPercent.toFixed(2)}% | value ${position.marketValue.toFixed(2)}${formatPriceProvenance(position.priceProvenance)}`;
 
   console.log(summarizePortfolioDashboardReport(report));
   if (report.latestSnapshot) {
@@ -90,23 +96,27 @@ export const renderDashboardSection = (
     );
   }
 
+  if (report.assetAllocation.length > 0) {
+    renderList(
+      "Asset allocation",
+      report.assetAllocation.map(
+        (allocation) =>
+          `${formatAssetType(allocation.assetType)} | ${allocation.holdingsCount} holdings | ${allocation.marketValue.toFixed(2)} | ${allocation.percentage.toFixed(2)}%`,
+      ),
+    );
+  }
+
   if (report.topWinners.length > 0) {
     renderList(
       "Top winners",
-      report.topWinners.map(
-        (position) =>
-          `${formatHoldingLabel(position.symbol, position.instrumentName)} | pnl ${position.pnlPercent.toFixed(2)}% | value ${position.marketValue.toFixed(2)}${formatPriceProvenance(position.priceProvenance)}`,
-      ),
+      report.topWinners.map(formatHoldingSummary),
     );
   }
 
   if (report.topLosers.length > 0) {
     renderList(
       "Top losers",
-      report.topLosers.map(
-        (position) =>
-          `${formatHoldingLabel(position.symbol, position.instrumentName)} | pnl ${position.pnlPercent.toFixed(2)}% | value ${position.marketValue.toFixed(2)}${formatPriceProvenance(position.priceProvenance)}`,
-      ),
+      report.topLosers.map(formatHoldingSummary),
     );
   }
 
@@ -142,10 +152,7 @@ export const renderDashboardSection = (
   if (report.unreviewedPositions.length > 0) {
     renderList(
       "New positions without review",
-      report.unreviewedPositions.map(
-        (position) =>
-          `${formatHoldingLabel(position.symbol, position.instrumentName)} | pnl ${position.pnlPercent.toFixed(2)}% | value ${position.marketValue.toFixed(2)}${formatPriceProvenance(position.priceProvenance)}`,
-      ),
+      report.unreviewedPositions.map(formatHoldingSummary),
     );
   }
 
