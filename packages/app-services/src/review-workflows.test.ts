@@ -6,6 +6,7 @@ import {
   buildBrokerPortfolioReviewReport,
   buildHoldingResearchReview,
   reviewImportedPortfolioAgainstResearch,
+  reviewPortfolioPositionsAgainstResearch,
   reviewSyncedBrokerPortfolioWithDependencies,
 } from "./review-workflows.ts";
 import { createTradeAiWorkflowDependencies } from "./ports.ts";
@@ -256,6 +257,29 @@ describe("app-services / review workflows", () => {
     expect(report.reviewCount).toBe(1);
     expect(report.reviews[0]?.reason).toContain("ETF holding");
     expect(report.reviews[0]?.reason).toContain("portfolio allocation");
+  });
+
+  it("renders unavailable allocation PnL without a percent sign", async () => {
+    const report = await Effect.runPromise(
+      reviewPortfolioPositionsAgainstResearch({
+        broker: "indstocks",
+        positions: [
+          {
+            symbol: "NIFTYBEES",
+            assetType: "etf",
+            isin: "INF204KB14I2",
+            exchangeSegment: "NSE_EQ",
+            quantity: 10,
+            averagePrice: 270,
+            marketValue: 2750,
+            sourceBroker: "indstocks",
+          },
+        ],
+      }),
+    );
+
+    expect(report.reviews[0]?.reason).toContain("pnl=unavailable,");
+    expect(report.reviews[0]?.reason).not.toContain("unavailable%");
   });
 
   it("can fail closed instead of falling back to public research", async () => {

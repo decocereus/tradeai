@@ -42,9 +42,9 @@ export const summarizeBrokerHolding = (
   instrumentName: string | undefined,
   quantity: number,
   averagePrice: number,
-  pnlPercent: number,
+  pnlPercent: number | undefined,
 ) =>
-  `${tradingSymbol}${instrumentName ? ` (${instrumentName})` : ""} | qty ${quantity} | avg ${averagePrice} | pnl ${pnlPercent.toFixed(2)}%`;
+  `${tradingSymbol}${instrumentName ? ` (${instrumentName})` : ""} | qty ${quantity} | avg ${averagePrice} | pnl ${pnlPercent === undefined ? "unavailable" : `${pnlPercent.toFixed(2)}%`}`;
 
 export const summarizeBrokerTradeFill = (
   tradeDate: string,
@@ -55,10 +55,16 @@ export const summarizeBrokerTradeFill = (
 
 export const summarizePortfolioSummary = (
   holdingsCount: number,
-  totalMarketValue: number,
-  weightedPnlPercent: number,
+  totalMarketValue: number | undefined,
+  weightedPnlPercent: number | undefined,
+  valuedHoldingsCount = holdingsCount,
+  unvaluedHoldingsCount = 0,
 ) =>
-  `${holdingsCount} holdings | market value ${totalMarketValue.toFixed(2)} | weighted pnl ${weightedPnlPercent.toFixed(2)}%`;
+  `${holdingsCount} holdings (${valuedHoldingsCount} valued, ${unvaluedHoldingsCount} unvalued) | market value ${
+    totalMarketValue === undefined ? "unavailable" : totalMarketValue.toFixed(2)
+  } | weighted pnl ${
+    weightedPnlPercent === undefined ? "unavailable" : `${weightedPnlPercent.toFixed(2)}%`
+  }`;
 
 export const summarizePortfolioDiff = (
   newPositions: number,
@@ -124,7 +130,15 @@ export const summarizePortfolioDashboardReport = (report: PortfolioDashboardRepo
     report.latestReview
       ? `partialResearch=${report.latestReview.reviews.filter((review) => review.researchQuality?.completeness !== "complete").length}`
       : "partialResearch=0",
-    `assetMix=${report.assetAllocation.map((entry) => `${entry.assetType}:${entry.percentage.toFixed(1)}%`).join(",") || "none"}`,
+    `assetMix=${
+      report.assetAllocation
+        .map((entry) =>
+          `${entry.assetType}:${
+            entry.percentage === undefined ? "unavailable" : `${entry.percentage.toFixed(1)}%`
+          }`,
+        )
+        .join(",") || "none"
+    }`,
     `topWinners=${report.topWinners.length}`,
     `topLosers=${report.topLosers.length}`,
     `topConflicts=${report.topConflicts.length}`,

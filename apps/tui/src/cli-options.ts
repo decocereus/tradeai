@@ -1,3 +1,8 @@
+import {
+  MAX_EQUITY_QUOTE_KEYS,
+  normalizeEquityQuoteKeys,
+} from "@tradeai/app-services";
+
 type BrokerSource = "groww" | "indstocks" | "manual_csv";
 
 export interface TuiCliOptions {
@@ -5,6 +10,7 @@ export interface TuiCliOptions {
   amfiQuery: string | undefined;
   equitySearchQuery: string | undefined;
   quoteKeys: readonly string[] | undefined;
+  quoteKeysError: string | undefined;
   equityResearchQuery: string | undefined;
   eventsQuery: string | undefined;
   holdingsFlag: boolean;
@@ -60,12 +66,12 @@ export const parseTuiCliOptions = (args: readonly string[]): TuiCliOptions => {
   const amfiQuery = readTrailingText(args, "--amfi", "parag parikh");
   const equitySearchQuery = readNextValue(args, "--equity-search", "reliance");
   const quoteRaw = readNextValue(args, "--quote", "");
-  const quoteKeys = quoteRaw
-    ? quoteRaw
-        .split(",")
-        .map((value) => value.trim())
-        .filter(Boolean)
-    : undefined;
+  const parsedQuoteKeys = quoteRaw ? normalizeEquityQuoteKeys(quoteRaw.split(",")) : [];
+  const quoteKeysError =
+    parsedQuoteKeys.length > MAX_EQUITY_QUOTE_KEYS
+      ? `Too many quote keys. Maximum allowed is ${MAX_EQUITY_QUOTE_KEYS}.`
+      : undefined;
+  const quoteKeys = parsedQuoteKeys.length > 0 && !quoteKeysError ? parsedQuoteKeys : undefined;
   const equityResearchQuery = readTrailingText(args, "--equity-research", "reliance");
   const eventsQuery = readTrailingText(args, "--events", "reliance");
   const tradeBookSegment = readTrailingText(args, "--trade-book", "EQUITY")?.toUpperCase();
@@ -93,6 +99,7 @@ export const parseTuiCliOptions = (args: readonly string[]): TuiCliOptions => {
     Boolean(piPrompt) ||
     Boolean(amfiQuery) ||
     Boolean(equitySearchQuery) ||
+    Boolean(quoteKeysError) ||
     Boolean(quoteKeys?.length) ||
     Boolean(equityResearchQuery) ||
     Boolean(eventsQuery) ||
@@ -114,6 +121,7 @@ export const parseTuiCliOptions = (args: readonly string[]): TuiCliOptions => {
     amfiQuery,
     equitySearchQuery,
     quoteKeys,
+    quoteKeysError,
     equityResearchQuery,
     eventsQuery,
     holdingsFlag,

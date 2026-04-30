@@ -66,6 +66,30 @@ describe("db / repository helpers", () => {
     expect(snapshot?.summary.holdingsCount).toBe(1);
   });
 
+  it("materializes valued snapshots with unavailable PnL when PnL is missing", () => {
+    const snapshot = materializePortfolioMemorySnapshot([
+      {
+        snapshotId: "indstocks:1",
+        broker: "indstocks",
+        payload: {
+          symbol: "VALUED-NO-PNL",
+          isin: "INE000000000",
+          exchangeSegment: "NSE_EQ",
+          quantity: 10,
+          averagePrice: 0,
+          lastTradedPrice: 100,
+          marketValue: 1000,
+          sourceBroker: "indstocks",
+        },
+        createdAt: new Date("2026-04-17T12:00:00.000Z"),
+      },
+    ]);
+
+    expect(snapshot?.summary.totalMarketValue).toBe(1000);
+    expect(snapshot?.summary.totalPnlAbsolute).toBeUndefined();
+    expect(snapshot?.summary.weightedPnlPercent).toBeUndefined();
+  });
+
   it("selects Groww as a preferred or latest dashboard broker", () => {
     const headers = [
       {
@@ -82,5 +106,6 @@ describe("db / repository helpers", () => {
 
     expect(resolvePreferredPortfolioDashboardBroker(headers)).toBe("groww");
     expect(resolvePreferredPortfolioDashboardBroker(headers, "indstocks")).toBe("indstocks");
+    expect(resolvePreferredPortfolioDashboardBroker(headers, "manual_csv", true)).toBe("manual_csv");
   });
 });

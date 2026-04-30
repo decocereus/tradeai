@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
+import { MAX_EQUITY_QUOTE_KEYS } from "@tradeai/app-services";
 import { parseTuiCliOptions } from "./cli-options.ts";
 
 describe("tui cli options", () => {
@@ -37,6 +38,28 @@ describe("tui cli options", () => {
     ]);
 
     expect(options.equitySearchQuery).toBe("RELIANCE");
+    expect(options.quoteKeys).toEqual(["RELIANCE", "TCS"]);
+    expect(options.quoteKeysError).toBeUndefined();
+  });
+
+  it("deduplicates and caps quote flags before the TUI workflow call", () => {
+    const duplicateOptions = parseTuiCliOptions(["--quote", "RELIANCE,RELIANCE,TCS"]);
+    expect(duplicateOptions.quoteKeys).toEqual(["RELIANCE", "TCS"]);
+
+    const tooManyQuoteKeys = Array.from(
+      { length: MAX_EQUITY_QUOTE_KEYS + 1 },
+      (_, index) => `SYM${index}`,
+    ).join(",");
+    const cappedOptions = parseTuiCliOptions(["--quote", tooManyQuoteKeys]);
+
+    expect(cappedOptions.quoteKeys).toBeUndefined();
+    expect(cappedOptions.quoteKeysError).toContain(`Maximum allowed is ${MAX_EQUITY_QUOTE_KEYS}`);
+    expect(cappedOptions.hasExplicitPrimaryAction).toBe(true);
+  });
+
+  it("deduplicates quote flags case-insensitively", () => {
+    const options = parseTuiCliOptions(["--quote", "RELIANCE,reliance,TCS"]);
+
     expect(options.quoteKeys).toEqual(["RELIANCE", "TCS"]);
   });
 

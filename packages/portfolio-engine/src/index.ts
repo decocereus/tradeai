@@ -66,11 +66,11 @@ export const normalizeBrokerHoldings = (
     exchangeSegment: holding.exchangeSegment,
     quantity: holding.quantity,
     averagePrice: holding.averagePrice,
-    lastTradedPrice: holding.lastTradedPrice,
-    closePrice: holding.closePrice,
-    marketValue: holding.marketValue,
-    pnlAbsolute: holding.pnlAbsolute,
-    pnlPercent: holding.pnlPercent,
+    ...(holding.lastTradedPrice !== undefined ? { lastTradedPrice: holding.lastTradedPrice } : {}),
+    ...(holding.closePrice !== undefined ? { closePrice: holding.closePrice } : {}),
+    ...(holding.marketValue !== undefined ? { marketValue: holding.marketValue } : {}),
+    ...(holding.pnlAbsolute !== undefined ? { pnlAbsolute: holding.pnlAbsolute } : {}),
+    ...(holding.pnlPercent !== undefined ? { pnlPercent: holding.pnlPercent } : {}),
     sourceBroker: holding.broker,
     ...(holding.priceProvenance ? { priceProvenance: holding.priceProvenance } : {}),
   }));
@@ -79,18 +79,43 @@ export const summarizePortfolioPositions = (
   positions: readonly PortfolioPositionSnapshot[],
 ): PortfolioSummary => {
   const holdingsCount = positions.length;
-  const totalMarketValue = positions.reduce((sum, position) => sum + position.marketValue, 0);
-  const totalPnlAbsolute = positions.reduce((sum, position) => sum + position.pnlAbsolute, 0);
+  const valuedPositions = positions.filter(
+    (position): position is PortfolioPositionSnapshot & { marketValue: number } =>
+      position.marketValue !== undefined,
+  );
+  const pnlValuedPositions = valuedPositions.filter(
+    (position): position is PortfolioPositionSnapshot & { marketValue: number; pnlAbsolute: number } =>
+      position.pnlAbsolute !== undefined,
+  );
+  const totalMarketValue = valuedPositions.reduce(
+    (sum, position) => sum + position.marketValue,
+    0,
+  );
+  const totalPnlAbsolute = pnlValuedPositions.reduce(
+    (sum, position) => sum + position.pnlAbsolute,
+    0,
+  );
+  const hasCompletePnl =
+    valuedPositions.length > 0 && pnlValuedPositions.length === valuedPositions.length;
   const weightedPnlPercent =
-    totalMarketValue > 0 ? (totalPnlAbsolute / totalMarketValue) * 100 : 0;
+    hasCompletePnl && totalMarketValue > 0
+      ? (totalPnlAbsolute / totalMarketValue) * 100
+      : undefined;
 
-  const sortedByPnl = [...positions].sort((left, right) => right.pnlPercent - left.pnlPercent);
+  const sortedByPnl = positions
+    .filter((position) => position.pnlPercent !== undefined)
+    .sort((left, right) => (right.pnlPercent ?? 0) - (left.pnlPercent ?? 0));
 
   return {
     holdingsCount,
-    totalMarketValue,
-    totalPnlAbsolute,
-    weightedPnlPercent,
+    valuedHoldingsCount: valuedPositions.length,
+    unvaluedHoldingsCount: positions.length - valuedPositions.length,
+    ...(valuedPositions.length > 0
+      ? {
+          totalMarketValue,
+          ...(hasCompletePnl ? { totalPnlAbsolute, weightedPnlPercent } : {}),
+        }
+      : {}),
     ...(sortedByPnl[0] ? { topWinnerSymbol: sortedByPnl[0].symbol } : {}),
     ...(sortedByPnl.at(-1) ? { topLoserSymbol: sortedByPnl.at(-1)?.symbol } : {}),
   };

@@ -13,11 +13,11 @@ export interface PersistedPortfolioPositionRecord {
   exchangeSegment: string;
   quantity: string;
   averagePrice: string;
-  lastTradedPrice: string;
-  closePrice: string;
-  marketValue: string;
-  pnlAbsolute: string;
-  pnlPercent: string;
+  lastTradedPrice: string | null;
+  closePrice: string | null;
+  marketValue: string | null;
+  pnlAbsolute: string | null;
+  pnlPercent: string | null;
   payload: PortfolioPositionSnapshot;
   createdAt: Date;
 }
@@ -38,6 +38,8 @@ export interface PersistedBrokerTradeFillRecord {
 }
 
 const toNumericString = (value: number): string => value.toFixed(4);
+const toOptionalNumericString = (value: number | undefined): string | null =>
+  value === undefined ? null : value.toFixed(4);
 
 const safeDateFromIso = (value: string): Date => {
   const date = new Date(value);
@@ -63,11 +65,11 @@ export const serializePortfolioPosition = (
   exchangeSegment: position.exchangeSegment,
   quantity: toNumericString(position.quantity),
   averagePrice: toNumericString(position.averagePrice),
-  lastTradedPrice: toNumericString(position.lastTradedPrice),
-  closePrice: toNumericString(position.closePrice),
-  marketValue: toNumericString(position.marketValue),
-  pnlAbsolute: toNumericString(position.pnlAbsolute),
-  pnlPercent: toNumericString(position.pnlPercent),
+  lastTradedPrice: toOptionalNumericString(position.lastTradedPrice),
+  closePrice: toOptionalNumericString(position.closePrice),
+  marketValue: toOptionalNumericString(position.marketValue),
+  pnlAbsolute: toOptionalNumericString(position.pnlAbsolute),
+  pnlPercent: toOptionalNumericString(position.pnlPercent),
   payload: position,
   createdAt,
 });

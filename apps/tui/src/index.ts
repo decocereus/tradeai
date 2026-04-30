@@ -2,6 +2,7 @@ import {
   createPiTradeAiSession,
   inspectPiResources,
 } from "@tradeai/agent-runtime";
+import type { EquityQuoteSnapshot } from "@tradeai/domain";
 import {
   createTradeAiWorkflowService,
   summarizeBrokerHolding,
@@ -15,6 +16,7 @@ import {
   summarizeCorporateEvent,
   summarizeDailyResearch,
   summarizeQuoteSnapshot,
+  type EquityQuoteSnapshotFailure,
   type TradeAiRuntimeConfig,
 } from "@tradeai/app-services";
 import { Effect } from "effect";
@@ -28,11 +30,23 @@ import {
   renderProviderHealthSection,
 } from "./render.ts";
 
+const isPartialEquityQuoteSnapshotsError = (
+  error: unknown,
+): error is {
+  snapshots: readonly EquityQuoteSnapshot[];
+  failures: readonly EquityQuoteSnapshotFailure[];
+} =>
+  typeof error === "object" &&
+  error !== null &&
+  Array.isArray((error as { snapshots?: unknown }).snapshots) &&
+  Array.isArray((error as { failures?: unknown }).failures);
+
 const {
   piPrompt,
   amfiQuery,
   equitySearchQuery,
   quoteKeys,
+  quoteKeysError,
   equityResearchQuery,
   eventsQuery,
   holdingsFlag,
@@ -359,19 +373,33 @@ const main = Effect.gen(function* () {
     console.log("Hint: run with `--equity-search <query>` to search equities.");
   }
 
-  if (quoteKeys?.length) {
-    const quoteResults = yield* tradeAi.getEquityQuoteSnapshots({
+  if (quoteKeysError) {
+    renderDivider("Quote Snapshots");
+    console.log(`Quote error: ${quoteKeysError}`);
+  } else if (quoteKeys?.length) {
+    const quoteResult = yield* tradeAi.getEquityQuoteSnapshots({
       instrumentKeys: quoteKeys,
-    }).pipe(
-      Effect.catchAll((error) => {
-        console.log("\nQuote error");
-        console.log(error instanceof Error ? error.message : String(error));
-        return Effect.succeed([]);
-      }),
-    );
+    }).pipe(Effect.either);
 
     renderDivider("Quote Snapshots");
     console.log(`Instrument keys: ${quoteKeys.join(", ")}`);
+    const quoteResults =
+      quoteResult._tag === "Right"
+        ? quoteResult.right
+        : isPartialEquityQuoteSnapshotsError(quoteResult.left)
+          ? quoteResult.left.snapshots
+          : [];
+    if (quoteResult._tag === "Left") {
+      if (isPartialEquityQuoteSnapshotsError(quoteResult.left)) {
+        console.log("Quote warning: partial provider failure");
+        for (const failure of quoteResult.left.failures.slice(0, 5)) {
+          console.log(`- ${failure.instrumentKey}: ${failure.message}`);
+        }
+      } else {
+        console.log("Quote error");
+        console.log(quoteResult.left.message);
+      }
+    }
     if (quoteResults.length === 0) {
       console.log("No quote snapshots returned.");
     } else {
@@ -454,6 +482,8 @@ const main = Effect.gen(function* () {
           portfolioSummary.holdingsCount,
           portfolioSummary.totalMarketValue,
           portfolioSummary.weightedPnlPercent,
+          portfolioSummary.valuedHoldingsCount,
+          portfolioSummary.unvaluedHoldingsCount,
         ),
       );
       if (portfolioSummary.topWinnerSymbol) {
@@ -722,6 +752,8 @@ const main = Effect.gen(function* () {
           imported.snapshot.summary.holdingsCount,
           imported.snapshot.summary.totalMarketValue,
           imported.snapshot.summary.weightedPnlPercent,
+          imported.snapshot.summary.valuedHoldingsCount,
+          imported.snapshot.summary.unvaluedHoldingsCount,
         ),
       );
       console.log(summarizePortfolioSyncReport(imported.report));

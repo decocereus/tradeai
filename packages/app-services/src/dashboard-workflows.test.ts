@@ -44,6 +44,48 @@ describe("app-services / dashboard workflows", () => {
     expect(allocation[1]).toMatchObject({ assetType: "stock", holdingsCount: 1, percentage: 25 });
   });
 
+  it("marks asset allocation percentages unavailable when any position is unvalued", () => {
+    const allocation = buildAssetAllocation([
+      {
+        symbol: "RELIANCE-EQ",
+        assetType: "stock",
+        isin: "INE002A01018",
+        exchangeSegment: "NSE_EQ",
+        quantity: 1,
+        averagePrice: 100,
+        lastTradedPrice: 100,
+        marketValue: 100,
+        pnlAbsolute: 0,
+        pnlPercent: 0,
+        sourceBroker: "indstocks",
+      },
+      {
+        symbol: "UNVALUED-MF",
+        assetType: "mutual_fund",
+        isin: "INF000000000",
+        exchangeSegment: "MF",
+        quantity: 10,
+        averagePrice: 10,
+        sourceBroker: "indstocks",
+      },
+    ]);
+
+    expect(allocation.find((entry) => entry.assetType === "stock")).toMatchObject({
+      holdingsCount: 1,
+      valuedHoldingsCount: 1,
+      unvaluedHoldingsCount: 0,
+      marketValue: 100,
+    });
+    expect(allocation.find((entry) => entry.assetType === "stock")?.percentage).toBeUndefined();
+    expect(allocation.find((entry) => entry.assetType === "mutual_fund")).toMatchObject({
+      holdingsCount: 1,
+      valuedHoldingsCount: 0,
+      unvaluedHoldingsCount: 1,
+    });
+    expect(allocation.find((entry) => entry.assetType === "mutual_fund")?.marketValue).toBeUndefined();
+    expect(allocation.find((entry) => entry.assetType === "mutual_fund")?.percentage).toBeUndefined();
+  });
+
   it("builds portfolio holding leaders from snapshot positions", () => {
     const leaders = buildPortfolioHoldingLeaders([
       {

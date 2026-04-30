@@ -110,8 +110,49 @@ describe("portfolio-engine", () => {
     ]);
 
     expect(summary.holdingsCount).toBe(2);
+    expect(summary.valuedHoldingsCount).toBe(2);
+    expect(summary.unvaluedHoldingsCount).toBe(0);
     expect(summary.topWinnerSymbol).toBe("RELIANCE-EQ");
     expect(summary.topLoserSymbol).toBe("INFY-EQ");
+  });
+
+  it("reports unvalued positions instead of manufacturing zero portfolio totals", () => {
+    const summary = summarizePortfolioPositions([
+      {
+        symbol: "UNVALUED-MF",
+        isin: "INF000000000",
+        exchangeSegment: "MF",
+        quantity: 10,
+        averagePrice: 100,
+        sourceBroker: "indstocks",
+      },
+    ]);
+
+    expect(summary.holdingsCount).toBe(1);
+    expect(summary.valuedHoldingsCount).toBe(0);
+    expect(summary.unvaluedHoldingsCount).toBe(1);
+    expect(summary.totalMarketValue).toBeUndefined();
+    expect(summary.weightedPnlPercent).toBeUndefined();
+  });
+
+  it("does not treat missing PnL as flat performance for valued positions", () => {
+    const summary = summarizePortfolioPositions([
+      {
+        symbol: "VALUED-NO-PNL",
+        isin: "INE000000000",
+        exchangeSegment: "NSE_EQ",
+        quantity: 10,
+        averagePrice: 0,
+        lastTradedPrice: 100,
+        marketValue: 1000,
+        sourceBroker: "indstocks",
+      },
+    ]);
+
+    expect(summary.valuedHoldingsCount).toBe(1);
+    expect(summary.totalMarketValue).toBe(1000);
+    expect(summary.totalPnlAbsolute).toBeUndefined();
+    expect(summary.weightedPnlPercent).toBeUndefined();
   });
 
   it("assesses a holding against research output", () => {

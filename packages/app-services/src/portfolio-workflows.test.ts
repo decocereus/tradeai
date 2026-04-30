@@ -155,6 +155,318 @@ describe("app-services / portfolio workflows", () => {
       },
     });
     expect(holdings[0]?.marketValue).toBeCloseTo(9017.12);
+    expect(holdings[0]?.pnlAbsolute).toBeUndefined();
+    expect(holdings[0]?.pnlPercent).toBeUndefined();
+  });
+
+  it("marks AMFI outages as unavailable instead of missing NAV", async () => {
+    const holdings = await Effect.runPromise(
+      getBrokerHoldings(
+        {},
+        {
+          config: { marketDataProvider: "groww" },
+          brokerSources: {
+            fetchBrokerHoldings: () =>
+              Effect.succeed([
+                {
+                  broker: "indstocks" as const,
+                  securityId: "INF194KB1AL4",
+                  tradingSymbol: "INF194KB1AL4",
+                  exchangeSegment: "MF",
+                  isin: "INF194KB1AL4",
+                  quantity: 194,
+                  averagePrice: 42,
+                  lastTradedPrice: 46,
+                  closePrice: 45,
+                  marketValue: 8924,
+                  pnlAbsolute: 776,
+                  pnlPercent: 9.52,
+                },
+              ]),
+            fetchBrokerTradeBook: () => Effect.succeed([]),
+          },
+          marketSources: {
+            fetchNseInstrumentProfiles: () => Effect.succeed([]),
+            fetchEquityQuotes: () => Effect.fail(new Error("unexpected equity quote")),
+            searchAmfiNav: () => Effect.fail(new Error("AMFI feed unavailable")),
+            searchCorporateEvents: () => Effect.succeed([]),
+            fetchCorporateEvents: () => Effect.succeed([]),
+            searchEquityProfiles: () => Effect.succeed([]),
+            searchEquityInstruments: () => Effect.succeed([]),
+            buildEquityQuoteSnapshot: () => [],
+          },
+          researchSources: {} as never,
+          memorySource: {} as never,
+          repositories: {} as never,
+        },
+      ),
+    );
+
+    expect(holdings[0]?.priceProvenance).toMatchObject({
+      status: "market_unavailable",
+      source: "fallback",
+      marketDataProvider: "amfi",
+      message: "AMFI feed unavailable",
+    });
+    expect(holdings[0]?.lastTradedPrice).toBeUndefined();
+    expect(holdings[0]?.marketValue).toBeUndefined();
+    expect(holdings[0]?.pnlAbsolute).toBeUndefined();
+    expect(holdings[0]?.pnlPercent).toBeUndefined();
+  });
+
+  it("fetches equity quote enrichment in one bounded batch", async () => {
+    let quoteFetches = 0;
+    const holdings = await Effect.runPromise(
+      getBrokerHoldings(
+        {
+          marketAccessToken: "groww-token",
+        },
+        {
+          config: { marketDataProvider: "groww" },
+          brokerSources: {
+            fetchBrokerHoldings: () =>
+              Effect.succeed([
+                {
+                  broker: "indstocks" as const,
+                  securityId: "500325",
+                  tradingSymbol: "RELIANCE-EQ",
+                  exchangeSegment: "NSE_EQ",
+                  isin: "INE002A01018",
+                  quantity: 1,
+                  averagePrice: 100,
+                },
+                {
+                  broker: "indstocks" as const,
+                  securityId: "532540",
+                  tradingSymbol: "TCS-EQ",
+                  exchangeSegment: "NSE_EQ",
+                  isin: "INE467B01029",
+                  quantity: 1,
+                  averagePrice: 100,
+                },
+              ]),
+            fetchBrokerTradeBook: () => Effect.succeed([]),
+          },
+          marketSources: {
+            fetchNseInstrumentProfiles: () =>
+              Effect.succeed([
+                {
+                  instrumentKey: "NSE_RELIANCE",
+                  exchange: "NSE",
+                  tradingSymbol: "RELIANCE",
+                  name: "Reliance Industries Limited",
+                  instrumentType: "EQ",
+                },
+                {
+                  instrumentKey: "NSE_TCS",
+                  exchange: "NSE",
+                  tradingSymbol: "TCS",
+                  name: "Tata Consultancy Services Limited",
+                  instrumentType: "EQ",
+                },
+              ]),
+            fetchEquityQuotes: (symbols, accessToken) => {
+              quoteFetches += 1;
+              expect(symbols).toEqual(["RELIANCE", "TCS"]);
+              expect(accessToken).toBe("groww-token");
+              return Effect.succeed([
+                { instrumentKey: "NSE_RELIANCE", tradingSymbol: "RELIANCE", lastPrice: 120 },
+                { instrumentKey: "NSE_TCS", tradingSymbol: "TCS", lastPrice: 90 },
+              ]);
+            },
+            searchAmfiNav: () => Effect.succeed([]),
+            searchCorporateEvents: () => Effect.succeed([]),
+            fetchCorporateEvents: () => Effect.succeed([]),
+            searchEquityProfiles: () => Effect.succeed([]),
+            searchEquityInstruments: () => Effect.succeed([]),
+            buildEquityQuoteSnapshot: () => [],
+          },
+          researchSources: {} as never,
+          memorySource: {} as never,
+          repositories: {} as never,
+        },
+      ),
+    );
+
+    expect(quoteFetches).toBe(1);
+    expect(holdings.map((holding) => holding.lastTradedPrice)).toEqual([120, 90]);
+  });
+
+  it("chunks portfolio quote enrichment under the quote cap", async () => {
+    const quoteBatches: string[][] = [];
+    const holdings = await Effect.runPromise(
+      getBrokerHoldings(
+        {
+          marketAccessToken: "groww-token",
+        },
+        {
+          config: { marketDataProvider: "groww" },
+          brokerSources: {
+            fetchBrokerHoldings: () =>
+              Effect.succeed(
+                Array.from({ length: 55 }, (_, index) => ({
+                  broker: "indstocks" as const,
+                  securityId: `SEC${index}`,
+                  tradingSymbol: `SYM${index}-EQ`,
+                  exchangeSegment: "NSE_EQ",
+                  isin: `INE${String(index).padStart(9, "0")}`,
+                  quantity: 1,
+                  averagePrice: 100,
+                })),
+              ),
+            fetchBrokerTradeBook: () => Effect.succeed([]),
+          },
+          marketSources: {
+            fetchNseInstrumentProfiles: () => Effect.succeed([]),
+            fetchEquityQuotes: (symbols) => {
+              quoteBatches.push([...symbols]);
+              expect(symbols.length).toBeLessThanOrEqual(50);
+              return Effect.succeed(
+                symbols.map((symbol) => ({
+                  instrumentKey: `NSE_${symbol}`,
+                  tradingSymbol: symbol,
+                  lastPrice: 120,
+                })),
+              );
+            },
+            searchAmfiNav: () => Effect.succeed([]),
+            searchCorporateEvents: () => Effect.succeed([]),
+            fetchCorporateEvents: () => Effect.succeed([]),
+            searchEquityProfiles: () => Effect.succeed([]),
+            searchEquityInstruments: () => Effect.succeed([]),
+            buildEquityQuoteSnapshot: () => [],
+          },
+          researchSources: {} as never,
+          memorySource: {} as never,
+          repositories: {} as never,
+        },
+      ),
+    );
+
+    expect(quoteBatches.map((batch) => batch.length)).toEqual([50, 5]);
+    expect(holdings).toHaveLength(55);
+    expect(holdings.every((holding) => holding.lastTradedPrice === 120)).toBe(true);
+  });
+
+  it("marks per-symbol quote failures as unavailable instead of missing", async () => {
+    const partialError = Object.assign(new Error("partial Groww quote failure"), {
+      quotes: [
+        {
+          instrumentKey: "NSE_RELIANCE",
+          tradingSymbol: "RELIANCE",
+          lastPrice: 120,
+        },
+      ],
+      failures: [
+        {
+          instrumentKey: "BROKEN",
+          message: "Groww quote failed for BROKEN: 500",
+        },
+      ],
+    });
+
+    const holdings = await Effect.runPromise(
+      getBrokerHoldings(
+        {
+          marketAccessToken: "groww-token",
+        },
+        {
+          config: { marketDataProvider: "groww" },
+          brokerSources: {
+            fetchBrokerHoldings: () =>
+              Effect.succeed([
+                {
+                  broker: "indstocks" as const,
+                  securityId: "500325",
+                  tradingSymbol: "RELIANCE-EQ",
+                  exchangeSegment: "NSE_EQ",
+                  isin: "INE002A01018",
+                  quantity: 1,
+                  averagePrice: 100,
+                },
+                {
+                  broker: "indstocks" as const,
+                  securityId: "BROKEN",
+                  tradingSymbol: "BROKEN-EQ",
+                  exchangeSegment: "NSE_EQ",
+                  isin: "INE000000000",
+                  quantity: 1,
+                  averagePrice: 100,
+                },
+              ]),
+            fetchBrokerTradeBook: () => Effect.succeed([]),
+          },
+          marketSources: {
+            fetchNseInstrumentProfiles: () => Effect.succeed([]),
+            fetchEquityQuotes: () => Effect.fail(partialError),
+            searchAmfiNav: () => Effect.succeed([]),
+            searchCorporateEvents: () => Effect.succeed([]),
+            fetchCorporateEvents: () => Effect.succeed([]),
+            searchEquityProfiles: () => Effect.succeed([]),
+            searchEquityInstruments: () => Effect.succeed([]),
+            buildEquityQuoteSnapshot: () => [],
+          },
+          researchSources: {} as never,
+          memorySource: {} as never,
+          repositories: {} as never,
+        },
+      ),
+    );
+
+    expect(holdings[0]?.priceProvenance?.status).toBe("market_enriched");
+    expect(holdings[0]?.lastTradedPrice).toBe(120);
+    expect(holdings[1]?.priceProvenance).toMatchObject({
+      status: "market_unavailable",
+      message: "Groww quote failed for BROKEN: 500",
+    });
+    expect(holdings[1]?.lastTradedPrice).toBeUndefined();
+  });
+
+  it("preserves broker PnL when current price is unavailable", async () => {
+    const holdings = await Effect.runPromise(
+      getBrokerHoldings(
+        {},
+        {
+          config: { marketDataProvider: "groww" },
+          brokerSources: {
+            fetchBrokerHoldings: () =>
+              Effect.succeed([
+                {
+                  broker: "indstocks" as const,
+                  securityId: "500325",
+                  tradingSymbol: "RELIANCE-EQ",
+                  exchangeSegment: "NSE_EQ",
+                  isin: "INE002A01018",
+                  quantity: 10,
+                  averagePrice: 100,
+                  marketValue: 1250,
+                  pnlAbsolute: 250,
+                  pnlPercent: 25,
+                },
+              ]),
+            fetchBrokerTradeBook: () => Effect.succeed([]),
+          },
+          marketSources: {
+            fetchNseInstrumentProfiles: () => Effect.succeed([]),
+            fetchEquityQuotes: () => Effect.succeed([]),
+            searchAmfiNav: () => Effect.succeed([]),
+            searchCorporateEvents: () => Effect.succeed([]),
+            fetchCorporateEvents: () => Effect.succeed([]),
+            searchEquityProfiles: () => Effect.succeed([]),
+            searchEquityInstruments: () => Effect.succeed([]),
+            buildEquityQuoteSnapshot: () => [],
+          },
+          researchSources: {} as never,
+          memorySource: {} as never,
+          repositories: {} as never,
+        },
+      ),
+    );
+
+    expect(holdings[0]?.lastTradedPrice).toBeUndefined();
+    expect(holdings[0]?.marketValue).toBe(1250);
+    expect(holdings[0]?.pnlAbsolute).toBe(250);
+    expect(holdings[0]?.pnlPercent).toBe(25);
   });
 
   it("records price enrichment misses in sync reports", () => {
@@ -185,6 +497,8 @@ describe("app-services / portfolio workflows", () => {
       ],
       summary: {
         holdingsCount: 1,
+        valuedHoldingsCount: 1,
+        unvaluedHoldingsCount: 0,
         totalMarketValue: 100,
         totalPnlAbsolute: 0,
         weightedPnlPercent: 0,
@@ -225,6 +539,8 @@ describe("app-services / portfolio workflows", () => {
       ],
       summary: {
         holdingsCount: 1,
+        valuedHoldingsCount: 1,
+        unvaluedHoldingsCount: 0,
         totalMarketValue: 125255,
         totalPnlAbsolute: 15255,
         weightedPnlPercent: 12.18,
@@ -254,6 +570,8 @@ describe("app-services / portfolio workflows", () => {
       ],
       summary: {
         holdingsCount: 1,
+        valuedHoldingsCount: 1,
+        unvaluedHoldingsCount: 0,
         totalMarketValue: 137780.5,
         totalPnlAbsolute: 16780.5,
         weightedPnlPercent: 12.17,

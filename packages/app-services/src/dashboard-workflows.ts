@@ -59,9 +59,9 @@ const toPortfolioHoldingSnapshotSummary = (
   symbol: position.symbol,
   assetType: resolvePositionAssetType(position),
   ...(position.instrumentName ? { instrumentName: position.instrumentName } : {}),
-  marketValue: position.marketValue,
-  pnlAbsolute: position.pnlAbsolute,
-  pnlPercent: position.pnlPercent,
+  ...(position.marketValue !== undefined ? { marketValue: position.marketValue } : {}),
+  ...(position.pnlAbsolute !== undefined ? { pnlAbsolute: position.pnlAbsolute } : {}),
+  ...(position.pnlPercent !== undefined ? { pnlPercent: position.pnlPercent } : {}),
   quantity: position.quantity,
   ...(position.priceProvenance ? { priceProvenance: position.priceProvenance } : {}),
 });
@@ -69,9 +69,19 @@ const toPortfolioHoldingSnapshotSummary = (
 export const buildAssetAllocation = (
   positions: readonly PortfolioPositionSnapshot[],
 ): PortfolioAssetAllocation[] => {
-  const totalMarketValue = positions.reduce((sum, position) => sum + position.marketValue, 0);
+  const valuedPositions = positions.filter(
+    (position): position is PortfolioPositionSnapshot & { marketValue: number } =>
+      position.marketValue !== undefined,
+  );
+  const totalMarketValue = valuedPositions.reduce(
+    (sum, position) => sum + position.marketValue,
+    0,
+  );
+  const hasUnvaluedPositions = valuedPositions.length !== positions.length;
   const byAssetType = new Map<PortfolioAssetAllocation["assetType"], {
     holdingsCount: number;
+    valuedHoldingsCount: number;
+    unvaluedHoldingsCount: number;
     marketValue: number;
   }>();
 
@@ -79,11 +89,16 @@ export const buildAssetAllocation = (
     const assetType = resolvePositionAssetType(position);
     const current = byAssetType.get(assetType) ?? {
       holdingsCount: 0,
+      valuedHoldingsCount: 0,
+      unvaluedHoldingsCount: 0,
       marketValue: 0,
     };
+    const hasMarketValue = position.marketValue !== undefined;
     byAssetType.set(assetType, {
       holdingsCount: current.holdingsCount + 1,
-      marketValue: current.marketValue + position.marketValue,
+      valuedHoldingsCount: current.valuedHoldingsCount + (hasMarketValue ? 1 : 0),
+      unvaluedHoldingsCount: current.unvaluedHoldingsCount + (hasMarketValue ? 0 : 1),
+      marketValue: current.marketValue + (hasMarketValue ? position.marketValue : 0),
     });
   }
 
@@ -91,21 +106,27 @@ export const buildAssetAllocation = (
     .map(([assetType, value]) => ({
       assetType,
       holdingsCount: value.holdingsCount,
-      marketValue: value.marketValue,
-      percentage: totalMarketValue > 0 ? (value.marketValue / totalMarketValue) * 100 : 0,
+      valuedHoldingsCount: value.valuedHoldingsCount,
+      unvaluedHoldingsCount: value.unvaluedHoldingsCount,
+      ...(value.valuedHoldingsCount > 0 ? { marketValue: value.marketValue } : {}),
+      ...(!hasUnvaluedPositions && totalMarketValue > 0
+        ? { percentage: (value.marketValue / totalMarketValue) * 100 }
+        : {}),
     }))
-    .sort((left, right) => right.marketValue - left.marketValue);
+    .sort((left, right) => (right.marketValue ?? 0) - (left.marketValue ?? 0));
 };
 
 export const buildPortfolioHoldingLeaders = (
   positions: readonly PortfolioPositionSnapshot[],
 ) => ({
   topWinners: [...positions]
-    .sort((left, right) => right.pnlPercent - left.pnlPercent)
+    .filter((position) => position.pnlPercent !== undefined)
+    .sort((left, right) => (right.pnlPercent ?? 0) - (left.pnlPercent ?? 0))
     .slice(0, DASHBOARD_HOLDING_LIMIT)
     .map(toPortfolioHoldingSnapshotSummary),
   topLosers: [...positions]
-    .sort((left, right) => left.pnlPercent - right.pnlPercent)
+    .filter((position) => position.pnlPercent !== undefined)
+    .sort((left, right) => (left.pnlPercent ?? 0) - (right.pnlPercent ?? 0))
     .slice(0, DASHBOARD_HOLDING_LIMIT)
     .map(toPortfolioHoldingSnapshotSummary),
 });

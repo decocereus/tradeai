@@ -43,8 +43,10 @@ export interface DailyOperatorViewModel {
     snapshotId: string | undefined;
     capturedAt: string | undefined;
     holdingsCount: number;
-    marketValue: number;
-    weightedPnlPercent: number;
+    valuedHoldingsCount: number;
+    unvaluedHoldingsCount: number;
+    marketValue: number | undefined;
+    weightedPnlPercent: number | undefined;
     priceFallbacks: number;
     partialResearch: number;
   };
@@ -107,9 +109,9 @@ const overallHealthStatus = (
 
 const healthActionItems = (health: ProviderHealthReport): TodayActionItem[] =>
   health.checks
-    .filter((check) => check.status === "failed" && check.action)
+    .filter((check) => check.status !== "ok" && check.action)
     .map((check) => ({
-      priority: "high" as const,
+      priority: check.status === "failed" ? "high" as const : "medium" as const,
       title: `${check.provider} ${check.name} unavailable`,
       detail: check.action ?? check.message,
     }));
@@ -342,8 +344,10 @@ export const buildDailyOperatorViewModel = (
       capturedAt: snapshot?.capturedAt,
       holdingsCount:
         snapshot?.summary.holdingsCount ?? report.decision?.sync.positionsFetched ?? 0,
-      marketValue: snapshot?.summary.totalMarketValue ?? 0,
-      weightedPnlPercent: snapshot?.summary.weightedPnlPercent ?? 0,
+      valuedHoldingsCount: snapshot?.summary.valuedHoldingsCount ?? 0,
+      unvaluedHoldingsCount: snapshot?.summary.unvaluedHoldingsCount ?? 0,
+      marketValue: snapshot?.summary.totalMarketValue,
+      weightedPnlPercent: snapshot?.summary.weightedPnlPercent,
       priceFallbacks:
         snapshot?.positions.filter((position) => position.priceProvenance?.source === "fallback")
           .length ?? 0,

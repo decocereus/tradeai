@@ -43,6 +43,8 @@ describe("app-services / report formatters", () => {
         positions: [],
         summary: {
           holdingsCount: 1,
+          valuedHoldingsCount: 1,
+          unvaluedHoldingsCount: 0,
           totalMarketValue: 125255,
           totalPnlAbsolute: 15255,
           weightedPnlPercent: 12.18,

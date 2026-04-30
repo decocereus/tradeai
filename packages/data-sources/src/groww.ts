@@ -13,8 +13,26 @@ export const GROWW_API_KEY_ENV = "GROWW_API_KEY";
 export const GROWW_API_SECRET_ENV = "GROWW_API_SECRET";
 export const GROWW_API_BASE_URL = "https://api.groww.in/v1";
 export const GROWW_INSTRUMENTS_CSV_URL = "https://growwapi-assets.groww.in/instruments/instrument.csv";
+export const MAX_GROWW_QUOTE_KEYS = 50;
 export const GROWW_TOKEN_REFRESH_HINT =
   "Groww access tokens expire daily around 6 AM IST; prefer GROWW_API_KEY/GROWW_API_SECRET so TradeAI can mint a fresh token.";
+
+export interface GrowwQuoteFailure {
+  instrumentKey: string;
+  message: string;
+}
+
+export class PartialGrowwQuoteSnapshotError extends Error {
+  readonly quotes: readonly EquityQuoteEntry[];
+  readonly failures: readonly GrowwQuoteFailure[];
+
+  constructor(quotes: readonly EquityQuoteEntry[], failures: readonly GrowwQuoteFailure[]) {
+    super(`Groww quote snapshot partially failed for ${failures.length} instrument(s).`);
+    this.name = "PartialGrowwQuoteSnapshotError";
+    this.quotes = quotes;
+    this.failures = failures;
+  }
+}
 
 interface GrowwApiResponse<T> {
   status?: string;
@@ -171,10 +189,23 @@ const buildGrowwHttpError = async (response: Response, context: string) => {
 };
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+const GROWW_QUOTE_ENRICHMENT_CONCURRENCY = 8;
 
 const normalizeGrowwSymbol = (value: string) => {
   const trimmed = value.trim().toUpperCase();
   return trimmed.includes("_") ? trimmed.split("_").at(-1) ?? trimmed : trimmed;
+};
+
+const normalizeGrowwQuoteKeys = (instrumentKeys: readonly string[]): readonly string[] => {
+  const normalizedByKey = new Map<string, string>();
+  for (const instrumentKey of instrumentKeys) {
+    const normalized = normalizeGrowwSymbol(instrumentKey);
+    if (!normalized) continue;
+    if (!normalizedByKey.has(normalized)) {
+      normalizedByKey.set(normalized, instrumentKey.trim());
+    }
+  }
+  return [...normalizedByKey.values()];
 };
 
 export const buildGrowwExchangeSymbol = (symbol: string, exchange = "NSE") =>
@@ -198,15 +229,15 @@ export const mapGrowwHolding = (
   if (!tradingSymbol || !isin || typeof quantity !== "number" || typeof averagePrice !== "number") {
     return null;
   }
-  if (!quote || typeof quote.lastPrice !== "number") {
-    return null;
-  }
-
-  const lastTradedPrice = quote.lastPrice;
-  const closePrice = quote?.closePrice ?? lastTradedPrice;
-  const marketValue = quantity * lastTradedPrice;
-  const pnlAbsolute = (lastTradedPrice - averagePrice) * quantity;
-  const pnlPercent = averagePrice > 0 ? ((lastTradedPrice - averagePrice) / averagePrice) * 100 : 0;
+  const quoteUnavailable = !quote || typeof quote.lastPrice !== "number";
+  const lastTradedPrice = quoteUnavailable ? undefined : quote.lastPrice;
+  const closePrice = quoteUnavailable ? undefined : quote.closePrice ?? quote.lastPrice;
+  const marketValue = lastTradedPrice === undefined ? undefined : quantity * lastTradedPrice;
+  const pnlAbsolute = lastTradedPrice === undefined ? undefined : (lastTradedPrice - averagePrice) * quantity;
+  const pnlPercent =
+    lastTradedPrice === undefined || averagePrice <= 0
+      ? undefined
+      : ((lastTradedPrice - averagePrice) / averagePrice) * 100;
 
   return {
     broker: "groww",
@@ -216,17 +247,25 @@ export const mapGrowwHolding = (
     isin,
     quantity,
     averagePrice,
-    lastTradedPrice,
-    closePrice,
-    marketValue,
-    pnlAbsolute,
-    pnlPercent,
-    priceProvenance: {
-      status: "market_enriched",
-      source: "market",
-      marketDataProvider: "groww",
-      quoteSymbol: quote.tradingSymbol ?? quote.instrumentKey,
-    },
+    ...(lastTradedPrice !== undefined ? { lastTradedPrice } : {}),
+    ...(closePrice !== undefined ? { closePrice } : {}),
+    ...(marketValue !== undefined ? { marketValue } : {}),
+    ...(pnlAbsolute !== undefined ? { pnlAbsolute } : {}),
+    ...(pnlPercent !== undefined ? { pnlPercent } : {}),
+    priceProvenance: quoteUnavailable
+      ? {
+          status: "market_unavailable",
+          source: "fallback",
+          marketDataProvider: "groww",
+          quoteSymbol: tradingSymbol,
+          message: "Groww quote unavailable; current valuation and PnL are unavailable.",
+        }
+      : {
+          status: "market_enriched",
+          source: "market",
+          marketDataProvider: "groww",
+          quoteSymbol: quote.tradingSymbol ?? quote.instrumentKey,
+        },
   };
 };
 
@@ -258,8 +297,10 @@ export const fetchGrowwHoldings = (
       const symbols = holdingRecords
         .map((holding) => holding.trading_symbol?.trim())
         .filter((symbol): symbol is string => Boolean(symbol));
-      const quoteResults = await Promise.allSettled(
-        symbols.map((symbol) => fetchGrowwQuote(symbol, resolvedToken, fetchImpl)),
+      const quoteResults = await mapSettledWithConcurrency(
+        symbols,
+        GROWW_QUOTE_ENRICHMENT_CONCURRENCY,
+        (symbol) => fetchGrowwQuote(symbol, resolvedToken, fetchImpl),
       );
       const quotes = quoteResults
         .filter((result): result is PromiseFulfilledResult<EquityQuoteEntry | null> => result.status === "fulfilled")
@@ -322,6 +363,41 @@ const fetchGrowwQuote = async (
   return mapGrowwQuoteEntry(buildGrowwExchangeSymbol(symbol), payload);
 };
 
+const mapSettledWithConcurrency = async <Input, Output>(
+  inputs: readonly Input[],
+  concurrency: number,
+  mapper: (input: Input) => Promise<Output>,
+): Promise<PromiseSettledResult<Output>[]> => {
+  const results = Array.from({ length: inputs.length }) as PromiseSettledResult<Output>[];
+  let nextIndex = 0;
+
+  const worker = async () => {
+    while (nextIndex < inputs.length) {
+      const currentIndex = nextIndex;
+      nextIndex += 1;
+      const input = inputs[currentIndex];
+      if (input === undefined) continue;
+
+      try {
+        results[currentIndex] = {
+          status: "fulfilled",
+          value: await mapper(input),
+        };
+      } catch (reason) {
+        results[currentIndex] = {
+          status: "rejected",
+          reason,
+        };
+      }
+    }
+  };
+
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, inputs.length) }, () => worker()),
+  );
+  return results;
+};
+
 export const fetchGrowwQuoteSnapshot = (
   instrumentKeys: readonly string[],
   accessToken?: string,
@@ -329,10 +405,39 @@ export const fetchGrowwQuoteSnapshot = (
 ) =>
   Effect.tryPromise({
     try: async () => {
+      const normalizedInstrumentKeys = normalizeGrowwQuoteKeys(instrumentKeys);
+      if (normalizedInstrumentKeys.length > MAX_GROWW_QUOTE_KEYS) {
+        throw new Error(`Too many Groww quote keys. Maximum allowed is ${MAX_GROWW_QUOTE_KEYS}.`);
+      }
       const resolvedToken = await resolveGrowwAccessTokenForRequest(accessToken, fetchImpl);
-      const quotes = await Promise.all(
-        instrumentKeys.map((instrumentKey) => fetchGrowwQuote(instrumentKey, resolvedToken, fetchImpl)),
+      const results = await mapSettledWithConcurrency(
+        normalizedInstrumentKeys,
+        GROWW_QUOTE_ENRICHMENT_CONCURRENCY,
+        (instrumentKey) => fetchGrowwQuote(instrumentKey, resolvedToken, fetchImpl),
       );
+      const quotes = results
+        .filter((result): result is PromiseFulfilledResult<EquityQuoteEntry | null> => result.status === "fulfilled")
+        .map((result) => result.value);
+      const failures = results.flatMap((result, index) => {
+        if (result.status !== "rejected") return [];
+        const reason = result.reason;
+        return [
+          {
+            instrumentKey: normalizedInstrumentKeys[index] ?? "unknown",
+            message: reason instanceof Error ? reason.message : String(reason),
+          },
+        ];
+      });
+
+      if (quotes.length === 0 && failures.length > 0) {
+        throw new Error(failures[0]?.message ?? "Groww quote snapshot failed.");
+      }
+      if (failures.length > 0) {
+        throw new PartialGrowwQuoteSnapshotError(
+          quotes.filter((quote): quote is EquityQuoteEntry => quote !== null),
+          failures,
+        );
+      }
 
       return quotes.filter((quote): quote is EquityQuoteEntry => quote !== null);
     },

@@ -36,6 +36,10 @@ const formatMoney = (value: number) =>
   }).format(value);
 
 const formatPercent = (value: number) => `${value.toFixed(2)}%`;
+const formatOptionalMoney = (value: number | undefined) =>
+  value === undefined ? "unavailable" : formatMoney(value);
+const formatOptionalPercent = (value: number | undefined) =>
+  value === undefined ? "unavailable" : formatPercent(value);
 
 const truncate = (value: string, maxLength: number) =>
   value.length > maxLength ? `${value.slice(0, maxLength - 3)}...` : value;
@@ -62,7 +66,7 @@ export const renderDashboardSection = (
   const formatHoldingSummary = (
     position: PortfolioDashboardReport["topWinners"][number],
   ) =>
-    `${formatHoldingLabel(position.symbol, position.instrumentName)} | ${formatAssetType(position.assetType)} | pnl ${position.pnlPercent.toFixed(2)}% | value ${position.marketValue.toFixed(2)}${formatPriceProvenance(position.priceProvenance)}`;
+    `${formatHoldingLabel(position.symbol, position.instrumentName)} | ${formatAssetType(position.assetType)} | pnl ${formatOptionalPercent(position.pnlPercent)} | value ${formatOptionalMoney(position.marketValue)}${formatPriceProvenance(position.priceProvenance)}`;
 
   console.log(summarizePortfolioDashboardReport(report));
   if (report.latestSnapshot) {
@@ -71,6 +75,8 @@ export const renderDashboardSection = (
         report.latestSnapshot.summary.holdingsCount,
         report.latestSnapshot.summary.totalMarketValue,
         report.latestSnapshot.summary.weightedPnlPercent,
+        report.latestSnapshot.summary.valuedHoldingsCount,
+        report.latestSnapshot.summary.unvaluedHoldingsCount,
       ),
     );
   }
@@ -119,7 +125,7 @@ export const renderDashboardSection = (
       "Asset allocation",
       report.assetAllocation.map(
         (allocation) =>
-          `${formatAssetType(allocation.assetType)} | ${allocation.holdingsCount} holdings | ${allocation.marketValue.toFixed(2)} | ${allocation.percentage.toFixed(2)}%`,
+          `${formatAssetType(allocation.assetType)} | ${allocation.holdingsCount} holdings (${allocation.valuedHoldingsCount} valued, ${allocation.unvaluedHoldingsCount} unvalued) | ${formatOptionalMoney(allocation.marketValue)} | ${formatOptionalPercent(allocation.percentage)}`,
       ),
     );
   }
@@ -255,7 +261,7 @@ export const renderDailyOperatorViewModel = (view: DailyOperatorViewModel) => {
   console.log(`Broker: ${view.portfolio.broker ?? "unknown"}`);
   console.log(`Snapshot: ${view.portfolio.snapshotId ?? "none"}`);
   console.log(
-    `${view.portfolio.holdingsCount} holdings | market value ${formatMoney(view.portfolio.marketValue)} | pnl ${formatPercent(view.portfolio.weightedPnlPercent)}`,
+    `${view.portfolio.holdingsCount} holdings (${view.portfolio.valuedHoldingsCount} valued, ${view.portfolio.unvaluedHoldingsCount} unvalued) | market value ${formatOptionalMoney(view.portfolio.marketValue)} | pnl ${formatOptionalPercent(view.portfolio.weightedPnlPercent)}`,
   );
   console.log(
     `Data quality: ${view.portfolio.priceFallbacks} price fallbacks | ${view.portfolio.partialResearch} incomplete research items`,
@@ -266,7 +272,7 @@ export const renderDailyOperatorViewModel = (view: DailyOperatorViewModel) => {
       "Asset allocation",
       view.assetAllocation.map(
         (allocation) =>
-          `${formatAssetType(allocation.assetType)} | ${formatMoney(allocation.marketValue)} | ${formatPercent(allocation.percentage)}`,
+          `${formatAssetType(allocation.assetType)} | ${allocation.holdingsCount} holdings (${allocation.valuedHoldingsCount} valued, ${allocation.unvaluedHoldingsCount} unvalued) | ${formatOptionalMoney(allocation.marketValue)} | ${formatOptionalPercent(allocation.percentage)}`,
       ),
     );
   }
@@ -304,7 +310,7 @@ export const renderDailyOperatorViewModel = (view: DailyOperatorViewModel) => {
       "Holdings",
       view.holdings.map(
         (holding) =>
-          `${holding.symbol}${holding.instrumentName ? ` (${holding.instrumentName})` : ""} | ${formatAssetType(holding.assetType)} | value ${formatMoney(holding.marketValue)} | pnl ${formatPercent(holding.pnlPercent)}${formatPriceProvenance(holding.priceProvenance)}`,
+          `${holding.symbol}${holding.instrumentName ? ` (${holding.instrumentName})` : ""} | ${formatAssetType(holding.assetType)} | value ${formatOptionalMoney(holding.marketValue)} | pnl ${formatOptionalPercent(holding.pnlPercent)}${formatPriceProvenance(holding.priceProvenance)}`,
       ),
     );
   }

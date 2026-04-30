@@ -46,7 +46,9 @@ export const buildResearchPacketFromIndstocksPosition = (
   const events = options?.events ?? [];
 
   const rawPercentChange =
-    position.closePrice === 0
+    position.closePrice === undefined ||
+    position.closePrice === 0 ||
+    position.lastTradedPrice === undefined
       ? 0
       : ((position.lastTradedPrice - position.closePrice) / position.closePrice) * 100;
   const absolutePercentChange = Math.abs(rawPercentChange);
@@ -175,22 +177,20 @@ export const buildIndstocksResearchPacketForPosition = (
 
     const quote = quoteMap[scripCode];
     const hasBrokerQuote = typeof quote?.live_price === "number";
+    const livePrice = quote?.live_price;
     const enrichedPosition: PortfolioPositionSnapshot = {
       ...position,
-      ...(quote?.live_price ? { lastTradedPrice: quote.live_price } : {}),
-      ...(quote?.prev_close ? { closePrice: quote.prev_close } : {}),
-      marketValue:
-        typeof quote?.live_price === "number"
-          ? quote.live_price * position.quantity
-          : position.marketValue,
-      pnlAbsolute:
-        typeof quote?.live_price === "number"
-          ? (quote.live_price - position.averagePrice) * position.quantity
-          : position.pnlAbsolute,
-      pnlPercent:
-        typeof quote?.live_price === "number" && position.averagePrice > 0
-          ? ((quote.live_price - position.averagePrice) / position.averagePrice) * 100
-          : position.pnlPercent,
+      ...(typeof livePrice === "number" ? { lastTradedPrice: livePrice } : {}),
+      ...(typeof quote?.prev_close === "number" ? { closePrice: quote.prev_close } : {}),
+      ...(typeof livePrice === "number"
+        ? {
+            marketValue: livePrice * position.quantity,
+            pnlAbsolute: (livePrice - position.averagePrice) * position.quantity,
+            ...(position.averagePrice > 0
+              ? { pnlPercent: ((livePrice - position.averagePrice) / position.averagePrice) * 100 }
+              : {}),
+          }
+        : {}),
     };
 
     const missingSignals: ResearchQuality["missingSignals"] = [

@@ -85,10 +85,31 @@ export const materializePortfolioMemorySnapshot = (
   if (!first) return undefined;
 
   const positions = rows.map((row) => row.payload);
-  const totalMarketValue = positions.reduce((sum, position) => sum + position.marketValue, 0);
-  const totalPnlAbsolute = positions.reduce((sum, position) => sum + position.pnlAbsolute, 0);
-  const weightedPnlPercent = totalMarketValue > 0 ? (totalPnlAbsolute / totalMarketValue) * 100 : 0;
-  const sortedByPnl = [...positions].sort((left, right) => right.pnlPercent - left.pnlPercent);
+  const valuedPositions = positions.filter(
+    (position): position is PortfolioPositionSnapshot & { marketValue: number } =>
+      position.marketValue !== undefined,
+  );
+  const pnlValuedPositions = valuedPositions.filter(
+    (position): position is PortfolioPositionSnapshot & { marketValue: number; pnlAbsolute: number } =>
+      position.pnlAbsolute !== undefined,
+  );
+  const totalMarketValue = valuedPositions.reduce(
+    (sum, position) => sum + position.marketValue,
+    0,
+  );
+  const totalPnlAbsolute = pnlValuedPositions.reduce(
+    (sum, position) => sum + position.pnlAbsolute,
+    0,
+  );
+  const hasCompletePnl =
+    valuedPositions.length > 0 && pnlValuedPositions.length === valuedPositions.length;
+  const weightedPnlPercent =
+    hasCompletePnl && totalMarketValue > 0
+      ? (totalPnlAbsolute / totalMarketValue) * 100
+      : undefined;
+  const sortedByPnl = positions
+    .filter((position) => position.pnlPercent !== undefined)
+    .sort((left, right) => (right.pnlPercent ?? 0) - (left.pnlPercent ?? 0));
 
   return {
     snapshotId: first.snapshotId,
@@ -97,9 +118,14 @@ export const materializePortfolioMemorySnapshot = (
     positions,
     summary: {
       holdingsCount: positions.length,
-      totalMarketValue,
-      totalPnlAbsolute,
-      weightedPnlPercent,
+      valuedHoldingsCount: valuedPositions.length,
+      unvaluedHoldingsCount: positions.length - valuedPositions.length,
+      ...(valuedPositions.length > 0
+        ? {
+            totalMarketValue,
+            ...(hasCompletePnl ? { totalPnlAbsolute, weightedPnlPercent } : {}),
+          }
+        : {}),
       ...(sortedByPnl[0] ? { topWinnerSymbol: sortedByPnl[0].symbol } : {}),
       ...(sortedByPnl.at(-1) ? { topLoserSymbol: sortedByPnl.at(-1)?.symbol } : {}),
     },
@@ -109,8 +135,12 @@ export const materializePortfolioMemorySnapshot = (
 export const resolvePreferredPortfolioDashboardBroker = (
   headers: readonly PortfolioSnapshotReference[],
   preferredBroker?: BrokerSource,
+  preferredBrokerHasSnapshots = false,
 ): BrokerSource => {
-  if (preferredBroker && headers.some((header) => header.broker === preferredBroker)) {
+  if (
+    preferredBroker &&
+    (preferredBrokerHasSnapshots || headers.some((header) => header.broker === preferredBroker))
+  ) {
     return preferredBroker;
   }
 
@@ -564,6 +594,9 @@ export const loadPreferredPortfolioDashboardRepositoryData = async (
   const { db, pool } = createDatabaseConnection(databaseUrl);
 
   try {
+    const preferredBrokerHeaders = preferredBroker
+      ? await selectRecentPortfolioSnapshotHeaders(db, preferredBroker, 1)
+      : [];
     const brokerHeaderRows = await selectRecentPortfolioSnapshotHeaders(
       db,
       undefined,
@@ -575,6 +608,7 @@ export const loadPreferredPortfolioDashboardRepositoryData = async (
     const resolvedBroker = resolvePreferredPortfolioDashboardBroker(
       allHeaders,
       preferredBroker,
+      preferredBrokerHeaders.length > 0,
     );
 
     return await queryPortfolioDashboardRepositoryData(

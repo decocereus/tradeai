@@ -1,7 +1,10 @@
 import type { BrokerSource } from "@tradeai/domain";
 import {
   createTradeAiWorkflowService,
+  MAX_EQUITY_QUOTE_KEYS,
+  normalizeEquityQuoteKeys,
   type CreateTradeAiWorkflowServiceOptions,
+  type EquityQuoteSnapshotFailure,
   type TradeAiWorkflowService,
 } from "@tradeai/app-services";
 import { Effect } from "effect";
@@ -10,7 +13,6 @@ import { timingSafeEqual } from "node:crypto";
 import { buildRuntimeConfigFromEnv } from "./runtime-config.ts";
 
 const API_AUTH_TOKEN_ENV = "TRADEAI_API_TOKEN";
-
 export interface ApiServerOptions extends CreateTradeAiWorkflowServiceOptions {
   service?: TradeAiWorkflowService;
   apiAuthToken?: string;
@@ -27,6 +29,17 @@ const jsonResponse = (payload: unknown, init?: ResponseInit) =>
 
 const errorResponse = (status: number, message: string) =>
   jsonResponse({ error: message }, { status });
+
+const isPartialEquityQuoteSnapshotsError = (
+  error: unknown,
+): error is {
+  snapshots: readonly unknown[];
+  failures: readonly EquityQuoteSnapshotFailure[];
+} =>
+  typeof error === "object" &&
+  error !== null &&
+  Array.isArray((error as { snapshots?: unknown }).snapshots) &&
+  Array.isArray((error as { failures?: unknown }).failures);
 
 const contractResponse = (command: string, data: unknown) =>
   jsonResponse({
@@ -151,6 +164,26 @@ const runJson = async <T>(effect: Effect.Effect<T, Error>) => {
   }
 };
 
+const runQuoteSnapshotsJson = async <T>(effect: Effect.Effect<T, Error>) => {
+  const result = await Effect.runPromise(Effect.either(effect));
+  if (result._tag === "Right") {
+    return jsonResponse({ data: result.right });
+  }
+  if (isPartialEquityQuoteSnapshotsError(result.left)) {
+    return jsonResponse(
+      {
+        data: result.left.snapshots,
+        warnings: result.left.failures.map((failure) => ({
+          instrumentKey: failure.instrumentKey,
+          message: failure.message,
+        })),
+      },
+      { status: 206 },
+    );
+  }
+  return errorResponse(500, result.left.message);
+};
+
 const runContractJson = async <T>(command: string, effect: Effect.Effect<T, Error>) => {
   try {
     const result = await Effect.runPromise(effect);
@@ -213,15 +246,21 @@ export const createApiRequestHandler = (options: ApiServerOptions = {}) => {
     }
 
     if (url.pathname === "/market/quotes") {
-      const instrumentKeys = url.searchParams
-        .getAll("instrumentKey")
-        .flatMap((value) => value.split(","))
-        .map((value) => value.trim())
-        .filter(Boolean);
+      const instrumentKeys = normalizeEquityQuoteKeys(
+        url.searchParams
+          .getAll("instrumentKey")
+          .flatMap((value) => value.split(",")),
+      );
       if (instrumentKeys.length === 0) {
         return errorResponse(400, "Missing required query parameter: instrumentKey");
       }
-      return runJson(tradeAi.getEquityQuoteSnapshots({ instrumentKeys }));
+      if (instrumentKeys.length > MAX_EQUITY_QUOTE_KEYS) {
+        return errorResponse(
+          400,
+          `Too many instrumentKey values. Maximum allowed is ${MAX_EQUITY_QUOTE_KEYS}.`,
+        );
+      }
+      return runQuoteSnapshotsJson(tradeAi.getEquityQuoteSnapshots({ instrumentKeys }));
     }
 
     if (url.pathname === "/research/equity") {

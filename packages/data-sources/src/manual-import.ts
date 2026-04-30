@@ -33,12 +33,7 @@ export const mapManualHoldingRecord = (
     !isin ||
     !exchangeSegment ||
     quantity === undefined ||
-    averagePrice === undefined ||
-    lastTradedPrice === undefined ||
-    closePrice === undefined ||
-    marketValue === undefined ||
-    pnlAbsolute === undefined ||
-    pnlPercent === undefined
+    averagePrice === undefined
   ) {
     return null;
   }
@@ -51,11 +46,11 @@ export const mapManualHoldingRecord = (
     isin,
     quantity,
     averagePrice,
-    lastTradedPrice,
-    closePrice,
-    marketValue,
-    pnlAbsolute,
-    pnlPercent,
+    ...(lastTradedPrice !== undefined ? { lastTradedPrice } : {}),
+    ...(closePrice !== undefined ? { closePrice } : {}),
+    ...(marketValue !== undefined ? { marketValue } : {}),
+    ...(pnlAbsolute !== undefined ? { pnlAbsolute } : {}),
+    ...(pnlPercent !== undefined ? { pnlPercent } : {}),
   };
 };
 

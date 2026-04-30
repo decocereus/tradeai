@@ -73,7 +73,7 @@ describe("data-sources / indstocks", () => {
     const holding = mapIndstocksHolding({
       isin: "INF194KB1AL4",
       total_qty: 194,
-      avg_price: 0,
+      avg_price: 10,
     });
 
     expect(holding).toMatchObject({
@@ -82,7 +82,36 @@ describe("data-sources / indstocks", () => {
       tradingSymbol: "INF194KB1AL4",
       exchangeSegment: "MF",
       quantity: 194,
+      priceProvenance: {
+        status: "market_missing",
+        source: "fallback",
+        marketDataProvider: "amfi",
+        quoteSymbol: "INF194KB1AL4",
+      },
     });
+    expect(holding?.lastTradedPrice).toBeUndefined();
+    expect(holding?.marketValue).toBeUndefined();
+  });
+
+  it("keeps unvalued mutual fund holdings visible without fake zero valuation", () => {
+    const holding = mapIndstocksHolding({
+      isin: "INF194KB1AL4",
+      total_qty: 194,
+      avg_price: 0,
+    });
+
+    expect(holding).toMatchObject({
+      broker: "indstocks",
+      tradingSymbol: "INF194KB1AL4",
+      quantity: 194,
+      priceProvenance: {
+        status: "market_missing",
+        source: "fallback",
+        marketDataProvider: "amfi",
+      },
+    });
+    expect(holding?.lastTradedPrice).toBeUndefined();
+    expect(holding?.marketValue).toBeUndefined();
   });
 
   it("maps compact holdings records using quote enrichment", () => {
@@ -122,6 +151,33 @@ describe("data-sources / indstocks", () => {
     });
 
     expect(holding).toBeNull();
+  });
+
+  it("marks unpriced equity holdings as unavailable when quote enrichment fails", () => {
+    const holding = mapIndstocksHolding(
+      {
+        security_id: "12345",
+        trading_symbol: "MISSING-EQ",
+        isin: "INE000000000",
+        quantity: 5,
+        average_price: 100,
+      },
+      {},
+      "INDstocks market quote fetch failed with status 400.",
+    );
+
+    expect(holding).toMatchObject({
+      broker: "indstocks",
+      tradingSymbol: "MISSING-EQ",
+      priceProvenance: {
+        status: "market_unavailable",
+        source: "fallback",
+        marketDataProvider: "indstocks",
+        message: "INDstocks market quote fetch failed with status 400.",
+      },
+    });
+    expect(holding?.lastTradedPrice).toBeUndefined();
+    expect(holding?.marketValue).toBeUndefined();
   });
 
   it("maps trade-book records", () => {
@@ -242,7 +298,7 @@ describe("data-sources / indstocks", () => {
     expect(holdings[0]?.tradingSymbol).toBe("NIFTYBEES");
   });
 
-  it("surfaces INDstocks quote enrichment failures", async () => {
+  it("keeps broker-priced holdings usable when INDstocks quote enrichment fails", async () => {
     const fetchStub = (async (input: RequestInfo | URL) => {
       if (String(input) === `${INDSTOCKS_BASE_URL}/portfolio/holdings`) {
         return new Response(
@@ -254,6 +310,8 @@ describe("data-sources / indstocks", () => {
                 isin: "INF204KB14I2",
                 total_qty: 11,
                 avg_price: 274.23,
+                last_traded_price: 276,
+                close_price: 275,
               },
             ],
           }),
@@ -264,9 +322,14 @@ describe("data-sources / indstocks", () => {
       return new Response(JSON.stringify({ status: "error" }), { status: 400 });
     }) as unknown as typeof fetch;
 
-    await expect(Effect.runPromise(fetchIndstocksHoldings("secret", fetchStub))).rejects.toThrow(
-      "INDstocks market quote fetch failed with status 400",
-    );
+    const holdings = await Effect.runPromise(fetchIndstocksHoldings("secret", fetchStub));
+    expect(holdings).toHaveLength(1);
+    expect(holdings[0]?.lastTradedPrice).toBe(276);
+    expect(holdings[0]?.priceProvenance).toMatchObject({
+      status: "broker",
+      source: "broker",
+      message: "INDstocks market quote fetch failed with status 400.",
+    });
   });
 
   it("fetches market quotes with injected fetch", async () => {

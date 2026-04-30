@@ -213,7 +213,7 @@ export const reviewPortfolioPositionsAgainstResearch = (input: ReviewPortfolioPo
               symbol: position.symbol,
               query: position.symbol,
               status: "review" as const,
-              reason: `${allocationRole} holding: review as portfolio allocation, not as a single-stock conviction call. Evidence: value=${position.marketValue.toFixed(2)}, pnl=${position.pnlPercent.toFixed(2)}%, priceSource=${position.priceProvenance?.marketDataProvider ?? "unknown"}.`,
+              reason: `${allocationRole} holding: review as portfolio allocation, not as a single-stock conviction call. Evidence: value=${position.marketValue?.toFixed(2) ?? "unavailable"}, pnl=${position.pnlPercent === undefined ? "unavailable" : `${position.pnlPercent.toFixed(2)}%`}, priceSource=${position.priceProvenance?.marketDataProvider ?? "unknown"}.`,
             };
           }
 

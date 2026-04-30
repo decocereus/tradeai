@@ -4,6 +4,10 @@ import { Effect } from "effect";
 
 import { customResearchPacket } from "./test-fixtures.ts";
 import { createTradeAiWorkflowService } from "./workflow-service.ts";
+import {
+  MAX_EQUITY_QUOTE_KEYS,
+  PartialEquityQuoteSnapshotsError,
+} from "./market-workflows.ts";
 
 describe("app-services / workflow service", () => {
   it("exposes a stable UI-agnostic workflow port", async () => {
@@ -276,6 +280,94 @@ describe("app-services / workflow service", () => {
     expect(calls).toEqual(["quotes:RELIANCE:groww-token"]);
   });
 
+  it("deduplicates and caps quote snapshot inputs at the workflow boundary", async () => {
+    const calls: string[] = [];
+    const tradeAi = createTradeAiWorkflowService({
+      marketSources: {
+        searchEquityInstruments: (query) => {
+          calls.push(`search:${query}`);
+          return Effect.succeed([]);
+        },
+        fetchEquityQuotes: (symbols) => {
+          calls.push(`quotes:${symbols.join(",")}`);
+          return Effect.succeed([]);
+        },
+        buildEquityQuoteSnapshot: () => [],
+      },
+    });
+
+    await Effect.runPromise(
+      tradeAi.getEquityQuoteSnapshots({ instrumentKeys: ["RELIANCE", "reliance", "TCS"] }),
+    );
+
+    expect(calls).toEqual(["search:RELIANCE", "search:TCS", "quotes:RELIANCE,TCS"]);
+
+    const tooManyKeys = Array.from({ length: MAX_EQUITY_QUOTE_KEYS + 1 }, (_, index) => `SYM${index}`);
+    await expect(
+      Effect.runPromise(tradeAi.getEquityQuoteSnapshots({ instrumentKeys: tooManyKeys })),
+    ).rejects.toThrow(`Maximum allowed is ${MAX_EQUITY_QUOTE_KEYS}`);
+  });
+
+  it("reports partial quote fetch failures with successful snapshots attached", async () => {
+    const tradeAi = createTradeAiWorkflowService({
+      marketSources: {
+        searchEquityInstruments: (query) =>
+          Effect.succeed([
+            {
+              instrumentKey: `NSE_${query}`,
+              exchange: "NSE",
+              tradingSymbol: query,
+              shortName: query,
+              instrumentType: "EQ",
+            },
+          ]),
+        fetchEquityQuotes: () =>
+          Effect.fail(
+            Object.assign(new Error("partial Groww quote failure"), {
+              quotes: [
+                {
+                  instrumentKey: "NSE_RELIANCE",
+                  tradingSymbol: "RELIANCE",
+                  lastPrice: 2500,
+                },
+              ],
+              failures: [
+                {
+                  instrumentKey: "BROKEN",
+                  message: "Groww quote failed for BROKEN",
+                },
+              ],
+            }),
+          ),
+      },
+    });
+
+    const result = await Effect.runPromise(
+      Effect.either(tradeAi.getEquityQuoteSnapshots({ instrumentKeys: ["RELIANCE", "BROKEN"] })),
+    );
+
+    expect(result._tag).toBe("Left");
+    if (result._tag !== "Left") throw new Error("expected partial quote snapshots");
+    expect(result.left).toBeInstanceOf(PartialEquityQuoteSnapshotsError);
+    const partialError = result.left as PartialEquityQuoteSnapshotsError;
+    expect(partialError.snapshots).toEqual([
+      {
+        instrumentKey: "NSE_RELIANCE",
+        exchange: "NSE",
+        tradingSymbol: "RELIANCE",
+        shortName: "RELIANCE",
+        instrumentType: "EQ",
+        lastPrice: 2500,
+      },
+    ]);
+    expect(partialError.failures).toEqual([
+      {
+        instrumentKey: "BROKEN",
+        message: "Groww quote failed for BROKEN",
+      },
+    ]);
+  });
+
   it("uses Aftermarkets research sources when configured", async () => {
     const tradeAi = createTradeAiWorkflowService({
       config: {
@@ -419,6 +511,10 @@ describe("app-services / workflow service", () => {
 
     expect(viewModel.providerHealth.status).toBe("failed");
     expect(viewModel.portfolio.holdingsCount).toBe(0);
+    expect(viewModel.portfolio.valuedHoldingsCount).toBe(0);
+    expect(viewModel.portfolio.unvaluedHoldingsCount).toBe(0);
+    expect(viewModel.portfolio.marketValue).toBeUndefined();
+    expect(viewModel.portfolio.weightedPnlPercent).toBeUndefined();
     expect(viewModel.actionItems[0]?.title).toBe("indstocks broker unavailable");
     expect(viewModel.dataQuality.providerIssues.map((issue) => issue.name)).toContain("broker");
     expect(Object.keys(viewModel).sort()).toEqual([
@@ -432,5 +528,22 @@ describe("app-services / workflow service", () => {
       "providerHealth",
       "reviewCandidates",
     ]);
+  });
+
+  it("surfaces read-only dashboard database remediation as an action item", async () => {
+    const tradeAi = createTradeAiWorkflowService({
+      repositories: {
+        hasConfiguredDatabaseUrl: () => false,
+      },
+    });
+
+    const viewModel = await Effect.runPromise(tradeAi.getDailyOperatorReadOnlyViewModel());
+
+    expect(viewModel.providerHealth.status).toBe("degraded");
+    expect(viewModel.actionItems[0]).toMatchObject({
+      priority: "medium",
+      title: "postgres database unavailable",
+    });
+    expect(viewModel.actionItems[0]?.detail).toContain("Set DATABASE_URL");
   });
 });

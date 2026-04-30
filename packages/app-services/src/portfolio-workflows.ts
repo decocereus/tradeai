@@ -25,10 +25,36 @@ import {
   createTradeAiWorkflowDependencies,
   type TradeAiWorkflowDependencies,
 } from "./ports.ts";
+import { MAX_EQUITY_QUOTE_KEYS } from "./market-workflows.ts";
 
 const log = createLogger("app-services");
 
 const defaultDependencies = createTradeAiWorkflowDependencies();
+
+const chunkArray = <T>(items: readonly T[], chunkSize: number): T[][] => {
+  const chunks: T[][] = [];
+  for (let index = 0; index < items.length; index += chunkSize) {
+    chunks.push(items.slice(index, index + chunkSize));
+  }
+  return chunks;
+};
+
+interface PartialQuoteFetchError extends Error {
+  quotes: readonly {
+    instrumentKey: string;
+    tradingSymbol?: string;
+    lastPrice: number;
+    closePrice?: number;
+  }[];
+  failures: readonly {
+    instrumentKey: string;
+    message: string;
+  }[];
+}
+
+const isPartialQuoteFetchError = (error: Error): error is PartialQuoteFetchError =>
+  Array.isArray((error as PartialQuoteFetchError).quotes) &&
+  Array.isArray((error as PartialQuoteFetchError).failures);
 
 export interface PortfolioPersistenceOptions {
   databaseUrl?: string;
@@ -84,38 +110,83 @@ const normalizeMarketSymbol = (symbol: string) =>
 const enrichMutualFundHolding = (
   holding: BrokerHolding,
   dependencies: TradeAiWorkflowDependencies,
-) =>
+): Effect.Effect<BrokerHolding, Error> =>
   Effect.gen(function* () {
-    const navEntries = yield* dependencies.marketSources.searchAmfiNav(holding.isin).pipe(
-      Effect.catchAll((error) => {
-        log.warn({ action: "enrichMutualFundHolding", isin: holding.isin, error }, "AMFI NAV enrichment unavailable");
-        return Effect.succeed([]);
-      }),
+    const navEntriesOutcome = yield* Effect.either(
+      dependencies.marketSources.searchAmfiNav(holding.isin),
     );
+    if (navEntriesOutcome._tag === "Left") {
+      log.warn(
+        { action: "enrichMutualFundHolding", isin: holding.isin, error: navEntriesOutcome.left },
+        "AMFI NAV enrichment unavailable",
+      );
+      const {
+        lastTradedPrice: _oldLastTradedPrice,
+        closePrice: _oldClosePrice,
+        marketValue: _oldMarketValue,
+        pnlAbsolute: _oldPnlAbsolute,
+        pnlPercent: _oldPnlPercent,
+        priceProvenance: _oldPriceProvenance,
+        ...holdingWithoutValuation
+      } = holding;
+      return {
+        ...holdingWithoutValuation,
+        priceProvenance: {
+          status: "market_unavailable" as const,
+          source: "fallback" as const,
+          marketDataProvider: "amfi" as const,
+          quoteSymbol: holding.isin,
+          message: navEntriesOutcome.left.message,
+        },
+      } satisfies BrokerHolding;
+    }
+
+    const navEntries = navEntriesOutcome.right;
     const nav = navEntries[0];
     const navValue = nav ? Number(nav.netAssetValue) : Number.NaN;
     if (!nav || !Number.isFinite(navValue)) {
+      const {
+        lastTradedPrice: _lastTradedPrice,
+        closePrice: _closePrice,
+        marketValue: _marketValue,
+        pnlAbsolute: _pnlAbsolute,
+        pnlPercent: _pnlPercent,
+        ...unvaluedHolding
+      } = holding;
       return {
-        ...holding,
+        ...unvaluedHolding,
         priceProvenance: {
           status: "market_missing" as const,
           source: "fallback" as const,
           marketDataProvider: "amfi" as const,
           quoteSymbol: holding.isin,
         },
-      };
+      } satisfies BrokerHolding;
     }
 
     const marketValue = holding.quantity * navValue;
+    const pnlAbsolute =
+      holding.averagePrice > 0
+        ? (navValue - holding.averagePrice) * holding.quantity
+        : undefined;
+    const pnlPercent =
+      holding.averagePrice > 0
+        ? ((navValue - holding.averagePrice) / holding.averagePrice) * 100
+        : undefined;
+    const {
+      pnlAbsolute: _oldPnlAbsolute,
+      pnlPercent: _oldPnlPercent,
+      ...holdingWithoutPnl
+    } = holding;
     return {
-      ...holding,
+      ...holdingWithoutPnl,
       instrumentName: nav.schemeName,
       tradingSymbol: nav.schemeName,
       lastTradedPrice: navValue,
       closePrice: navValue,
       marketValue,
-      pnlAbsolute: holding.averagePrice > 0 ? (navValue - holding.averagePrice) * holding.quantity : 0,
-      pnlPercent: holding.averagePrice > 0 ? ((navValue - holding.averagePrice) / holding.averagePrice) * 100 : 0,
+      ...(pnlAbsolute !== undefined ? { pnlAbsolute } : {}),
+      ...(pnlPercent !== undefined ? { pnlPercent } : {}),
       priceProvenance: {
         status: "market_enriched" as const,
         source: "market" as const,
@@ -177,6 +248,55 @@ export const enrichBrokerHoldingsWithMarketData = (
     const profilesBySymbol = new Map(
       profiles.map((profile) => [profile.tradingSymbol.toUpperCase(), profile]),
     );
+    const resolveEquityMarketProfile = (holding: BrokerHolding) => {
+      const normalizedHoldingSymbol = normalizeMarketSymbol(holding.tradingSymbol);
+      const profile = profilesBySymbol.get(normalizedHoldingSymbol);
+      return {
+        profile,
+        instrumentName: profile?.name || profile?.shortName || holding.instrumentName,
+        marketSymbol: profile?.tradingSymbol ?? normalizedHoldingSymbol,
+      };
+    };
+    const equityHoldings = holdings.filter((holding) => holding.exchangeSegment !== "MF");
+    const marketSymbols = [
+      ...new Set(equityHoldings.map((holding) => resolveEquityMarketProfile(holding).marketSymbol)),
+    ];
+    const marketSymbolChunks = chunkArray(marketSymbols, MAX_EQUITY_QUOTE_KEYS);
+    const quoteResults = yield* Effect.forEach(
+      marketSymbolChunks,
+      (marketSymbolChunk) =>
+        Effect.either(
+          dependencies.marketSources.fetchEquityQuotes(marketSymbolChunk, input.marketAccessToken),
+        ),
+      { concurrency: 1 },
+    );
+    const quotesByMarketSymbol = new Map(
+      quoteResults
+        .flatMap((result) =>
+          result._tag === "Right"
+            ? result.right
+            : isPartialQuoteFetchError(result.left)
+              ? result.left.quotes
+              : [],
+        )
+        .map((quote) => [
+          normalizeMarketSymbol(quote.tradingSymbol ?? quote.instrumentKey),
+          quote,
+        ]),
+    );
+    const quoteFailuresByMarketSymbol = new Map<string, string>();
+    quoteResults.forEach((result, index) => {
+      if (result._tag !== "Left") return;
+      if (isPartialQuoteFetchError(result.left)) {
+        result.left.failures.forEach((failure) => {
+          quoteFailuresByMarketSymbol.set(normalizeMarketSymbol(failure.instrumentKey), failure.message);
+        });
+        return;
+      }
+      marketSymbolChunks[index]?.forEach((marketSymbol) => {
+        quoteFailuresByMarketSymbol.set(normalizeMarketSymbol(marketSymbol), result.left.message);
+      });
+    });
 
     return yield* Effect.all(
       holdings.map((holding) =>
@@ -185,19 +305,12 @@ export const enrichBrokerHoldingsWithMarketData = (
             return yield* enrichMutualFundHolding(holding, dependencies);
           }
 
-          const normalizedHoldingSymbol = normalizeMarketSymbol(holding.tradingSymbol);
-          const profile = profilesBySymbol.get(normalizedHoldingSymbol);
-          const instrumentName = profile?.name || profile?.shortName || holding.instrumentName;
-          const marketSymbol = profile?.tradingSymbol ?? normalizeMarketSymbol(holding.tradingSymbol);
-          const quoteResult = yield* Effect.either(
-            dependencies.marketSources.fetchEquityQuotes([marketSymbol], input.marketAccessToken),
-          );
-          const quote =
-            quoteResult._tag === "Right"
-              ? quoteResult.right.find(
-                  (entry) => normalizeMarketSymbol(entry.tradingSymbol ?? entry.instrumentKey) === marketSymbol,
-                )
-              : undefined;
+          const { instrumentName, marketSymbol } = resolveEquityMarketProfile(holding);
+          const normalizedMarketSymbol = normalizeMarketSymbol(marketSymbol);
+          const quote = quotesByMarketSymbol.get(normalizedMarketSymbol);
+          const quoteFetchError = quoteFailuresByMarketSymbol.get(normalizedMarketSymbol);
+          const hasBrokerValuation =
+            holding.lastTradedPrice !== undefined || holding.marketValue !== undefined;
           const priceProvenance =
             quote
               ? {
@@ -206,40 +319,69 @@ export const enrichBrokerHoldingsWithMarketData = (
                   marketDataProvider,
                   quoteSymbol: quote.tradingSymbol ?? marketSymbol,
                 }
-              : quoteResult._tag === "Left"
+              : quoteFetchError
                 ? {
-                    status: "market_unavailable" as const,
-                    source: "fallback" as const,
-                    marketDataProvider,
-                    quoteSymbol: marketSymbol,
-                    message: quoteResult.left.message,
+                    ...(hasBrokerValuation
+                      ? {
+                          status: "broker" as const,
+                          source: "broker" as const,
+                        }
+                      : {
+                          status: "market_unavailable" as const,
+                          source: "fallback" as const,
+                          marketDataProvider,
+                          quoteSymbol: marketSymbol,
+                        }),
+                    message: quoteFetchError,
                   }
-                : {
-                    status: "market_missing" as const,
-                    source: "fallback" as const,
-                    marketDataProvider,
-                    quoteSymbol: marketSymbol,
-                  };
+                : hasBrokerValuation
+                  ? {
+                      status: "broker" as const,
+                      source: "broker" as const,
+                    }
+                  : {
+                      status: "market_missing" as const,
+                      source: "fallback" as const,
+                      marketDataProvider,
+                      quoteSymbol: marketSymbol,
+                    };
 
           const lastTradedPrice = quote?.lastPrice ?? holding.lastTradedPrice;
           const closePrice = quote?.closePrice ?? holding.closePrice;
-          const marketValue = holding.quantity * lastTradedPrice;
-          const pnlAbsolute = (lastTradedPrice - holding.averagePrice) * holding.quantity;
+          const marketValue =
+            lastTradedPrice === undefined
+              ? holding.marketValue
+              : holding.quantity * lastTradedPrice;
+          const pnlAbsolute =
+            lastTradedPrice === undefined || holding.averagePrice <= 0
+              ? holding.pnlAbsolute
+              : (lastTradedPrice - holding.averagePrice) * holding.quantity;
           const pnlPercent =
-            holding.averagePrice > 0 ? ((lastTradedPrice - holding.averagePrice) / holding.averagePrice) * 100 : 0;
+            lastTradedPrice === undefined || holding.averagePrice <= 0
+              ? holding.pnlPercent
+              : ((lastTradedPrice - holding.averagePrice) / holding.averagePrice) * 100;
+          const {
+            lastTradedPrice: _oldLastTradedPrice,
+            closePrice: _oldClosePrice,
+            marketValue: _oldMarketValue,
+            pnlAbsolute: _oldPnlAbsolute,
+            pnlPercent: _oldPnlPercent,
+            ...holdingWithoutValuation
+          } = holding;
 
           return {
-            ...holding,
+            ...holdingWithoutValuation,
             ...(instrumentName ? { instrumentName } : {}),
-            lastTradedPrice,
-            closePrice,
-            marketValue,
-            pnlAbsolute,
-            pnlPercent,
+            ...(lastTradedPrice !== undefined ? { lastTradedPrice } : {}),
+            ...(closePrice !== undefined ? { closePrice } : {}),
+            ...(marketValue !== undefined ? { marketValue } : {}),
+            ...(pnlAbsolute !== undefined ? { pnlAbsolute } : {}),
+            ...(pnlPercent !== undefined ? { pnlPercent } : {}),
             priceProvenance,
           };
         }),
       ),
+      { concurrency: 8 },
     );
   });
 

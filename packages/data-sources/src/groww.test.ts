@@ -8,8 +8,10 @@ import {
   fetchGrowwHoldings,
   fetchGrowwQuoteSnapshot,
   generateGrowwChecksum,
+  MAX_GROWW_QUOTE_KEYS,
   mapGrowwHolding,
   mapGrowwQuoteEntry,
+  PartialGrowwQuoteSnapshotError,
   parseGrowwInstrumentCsv,
   resolveGrowwAccessToken,
 } from "./groww.ts";
@@ -121,7 +123,7 @@ describe("data-sources / groww", () => {
     expect(holdings[0]?.pnlAbsolute).toBe(1000);
   });
 
-  it("does not manufacture holding valuations when quote enrichment is unavailable", async () => {
+  it("keeps holdings visible with explicit unavailable provenance when quote enrichment fails", async () => {
     const fetchStub = (async (input: RequestInfo | URL) => {
       if (String(input).includes("/live-data/quote")) {
         return new Response("unavailable", { status: 500 });
@@ -144,7 +146,20 @@ describe("data-sources / groww", () => {
     }) as unknown as typeof fetch;
 
     const holdings = await Effect.runPromise(fetchGrowwHoldings("token", fetchStub));
-    expect(holdings).toHaveLength(0);
+    expect(holdings).toHaveLength(1);
+    expect(holdings[0]).toMatchObject({
+      broker: "groww",
+      tradingSymbol: "RELIANCE",
+      priceProvenance: {
+        status: "market_unavailable",
+        source: "fallback",
+        marketDataProvider: "groww",
+        quoteSymbol: "RELIANCE",
+      },
+    });
+    expect(holdings[0]?.marketValue).toBeUndefined();
+    expect(holdings[0]?.pnlAbsolute).toBeUndefined();
+    expect(holdings[0]?.priceProvenance?.message).toContain("valuation and PnL are unavailable");
   });
 
   it("does not drop valid quote enrichment when one holding quote fails", async () => {
@@ -189,7 +204,53 @@ describe("data-sources / groww", () => {
 
     const holdings = await Effect.runPromise(fetchGrowwHoldings("token", fetchStub));
     expect(holdings.find((holding) => holding.tradingSymbol === "RELIANCE")?.lastTradedPrice).toBe(1500);
-    expect(holdings.find((holding) => holding.tradingSymbol === "BAD")).toBeUndefined();
+    expect(holdings.find((holding) => holding.tradingSymbol === "BAD")?.priceProvenance).toMatchObject({
+      status: "market_unavailable",
+      source: "fallback",
+      marketDataProvider: "groww",
+    });
+  });
+
+  it("bounds concurrent quote enrichment for holdings", async () => {
+    let activeQuotes = 0;
+    let maxActiveQuotes = 0;
+    const fetchStub = (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/live-data/quote")) {
+        activeQuotes += 1;
+        maxActiveQuotes = Math.max(maxActiveQuotes, activeQuotes);
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        activeQuotes -= 1;
+        return new Response(
+          JSON.stringify({
+            status: "SUCCESS",
+            payload: {
+              last_price: 100,
+              ohlc: { close: 99 },
+            },
+          }),
+        );
+      }
+
+      return new Response(
+        JSON.stringify({
+          status: "SUCCESS",
+          payload: {
+            holdings: Array.from({ length: 20 }, (_, index) => ({
+              isin: `INE${String(index).padStart(9, "0")}`,
+              trading_symbol: `SYM${index}`,
+              quantity: 1,
+              average_price: 90,
+            })),
+          },
+        }),
+      );
+    }) as unknown as typeof fetch;
+
+    const holdings = await Effect.runPromise(fetchGrowwHoldings("token", fetchStub));
+
+    expect(holdings).toHaveLength(20);
+    expect(maxActiveQuotes).toBeLessThanOrEqual(8);
   });
 
   it("maps quotes and quote snapshots", () => {
@@ -249,6 +310,113 @@ describe("data-sources / groww", () => {
 
     expect(urls[0]).toContain("trading_symbol=RELIANCE");
     expect(quotes[0]?.instrumentKey).toBe("NSE_RELIANCE");
+  });
+
+  it("deduplicates quote snapshot keys before fetching", async () => {
+    const urls: string[] = [];
+    const fetchStub = (async (input: RequestInfo | URL) => {
+      urls.push(String(input));
+      return new Response(
+        JSON.stringify({
+          status: "SUCCESS",
+          payload: {
+            last_price: 1425.4,
+            ohlc: { close: 1388.9 },
+          },
+        }),
+      );
+    }) as typeof fetch;
+
+    const quotes = await Effect.runPromise(
+      fetchGrowwQuoteSnapshot(["RELIANCE", "reliance", "NSE_RELIANCE"], "token", fetchStub),
+    );
+
+    expect(quotes).toHaveLength(1);
+    expect(urls.filter((url) => url.includes("/live-data/quote"))).toHaveLength(1);
+  });
+
+  it("reports partial quote snapshot failures with successful rows attached", async () => {
+    const fetchStub = (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("trading_symbol=BROKEN")) {
+        return new Response(JSON.stringify({ status: "FAILURE" }), { status: 500 });
+      }
+
+      return new Response(
+        JSON.stringify({
+          status: "SUCCESS",
+          payload: {
+            last_price: 1425.4,
+            ohlc: { close: 1388.9 },
+          },
+        }),
+      );
+    }) as typeof fetch;
+
+    const result = await Effect.runPromise(
+      Effect.either(fetchGrowwQuoteSnapshot(["RELIANCE", "BROKEN"], "token", fetchStub)),
+    );
+
+    expect(result._tag).toBe("Left");
+    if (result._tag !== "Left") throw new Error("expected partial quote failure");
+    expect(result.left).toBeInstanceOf(PartialGrowwQuoteSnapshotError);
+    const partialError = result.left as PartialGrowwQuoteSnapshotError;
+    expect(partialError.quotes).toHaveLength(1);
+    expect(partialError.quotes[0]?.tradingSymbol).toBe("RELIANCE");
+    expect(partialError.failures).toEqual([
+      {
+        instrumentKey: "BROKEN",
+        message: "Groww quote fetch failed with status 500: {\"status\":\"FAILURE\"}",
+      },
+    ]);
+  });
+
+  it("bounds concurrent quote snapshot requests", async () => {
+    let activeQuotes = 0;
+    let maxActiveQuotes = 0;
+    const fetchStub = (async (input: RequestInfo | URL) => {
+      if (String(input).includes("/live-data/quote")) {
+        activeQuotes += 1;
+        maxActiveQuotes = Math.max(maxActiveQuotes, activeQuotes);
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        activeQuotes -= 1;
+      }
+
+      return new Response(
+        JSON.stringify({
+          status: "SUCCESS",
+          payload: {
+            last_price: 1425.4,
+            ohlc: { close: 1388.9 },
+          },
+        }),
+      );
+    }) as typeof fetch;
+
+    const quotes = await Effect.runPromise(
+      fetchGrowwQuoteSnapshot(
+        Array.from({ length: 20 }, (_, index) => `SYM${index}`),
+        "token",
+        fetchStub,
+      ),
+    );
+
+    expect(quotes).toHaveLength(20);
+    expect(maxActiveQuotes).toBeLessThanOrEqual(8);
+  });
+
+  it("rejects unbounded quote snapshot requests at the data-source boundary", async () => {
+    await expect(
+      Effect.runPromise(
+        fetchGrowwQuoteSnapshot(
+          Array.from({ length: MAX_GROWW_QUOTE_KEYS + 1 }, (_, index) => `SYM${index}`),
+          "token",
+          (() => {
+            throw new Error("fetch should not run");
+          }) as unknown as typeof fetch,
+        ),
+      ),
+    ).rejects.toThrow(`Maximum allowed is ${MAX_GROWW_QUOTE_KEYS}`);
   });
 
   it("parses Groww instrument CSV", () => {

@@ -270,11 +270,11 @@ export const BrokerHolding = Schema.Struct({
   isin: Schema.String,
   quantity: Schema.Number,
   averagePrice: Schema.Number,
-  lastTradedPrice: Schema.Number,
-  closePrice: Schema.Number,
-  marketValue: Schema.Number,
-  pnlAbsolute: Schema.Number,
-  pnlPercent: Schema.Number,
+  lastTradedPrice: Schema.optional(Schema.Number),
+  closePrice: Schema.optional(Schema.Number),
+  marketValue: Schema.optional(Schema.Number),
+  pnlAbsolute: Schema.optional(Schema.Number),
+  pnlPercent: Schema.optional(Schema.Number),
   priceProvenance: Schema.optional(
     Schema.Struct({
       status: Schema.Literal("broker", "market_enriched", "market_missing", "market_unavailable"),
@@ -308,11 +308,11 @@ export const PortfolioPositionSnapshot = Schema.Struct({
   exchangeSegment: Schema.String,
   quantity: Schema.Number,
   averagePrice: Schema.Number,
-  lastTradedPrice: Schema.Number,
-  closePrice: Schema.Number,
-  marketValue: Schema.Number,
-  pnlAbsolute: Schema.Number,
-  pnlPercent: Schema.Number,
+  lastTradedPrice: Schema.optional(Schema.Number),
+  closePrice: Schema.optional(Schema.Number),
+  marketValue: Schema.optional(Schema.Number),
+  pnlAbsolute: Schema.optional(Schema.Number),
+  pnlPercent: Schema.optional(Schema.Number),
   sourceBroker: BrokerSource,
   priceProvenance: Schema.optional(
     Schema.Struct({
@@ -328,9 +328,11 @@ export type PortfolioPositionSnapshot = Schema.Schema.Type<typeof PortfolioPosit
 
 export const PortfolioSummary = Schema.Struct({
   holdingsCount: Schema.Number,
-  totalMarketValue: Schema.Number,
-  totalPnlAbsolute: Schema.Number,
-  weightedPnlPercent: Schema.Number,
+  valuedHoldingsCount: Schema.Number,
+  unvaluedHoldingsCount: Schema.Number,
+  totalMarketValue: Schema.optional(Schema.Number),
+  totalPnlAbsolute: Schema.optional(Schema.Number),
+  weightedPnlPercent: Schema.optional(Schema.Number),
   topWinnerSymbol: Schema.optional(Schema.String),
   topLoserSymbol: Schema.optional(Schema.String),
 });
@@ -373,8 +375,10 @@ export type PortfolioSnapshotReference = Schema.Schema.Type<typeof PortfolioSnap
 export const PortfolioAssetAllocation = Schema.Struct({
   assetType: AssetType,
   holdingsCount: Schema.Number,
-  marketValue: Schema.Number,
-  percentage: Schema.Number,
+  valuedHoldingsCount: Schema.Number,
+  unvaluedHoldingsCount: Schema.Number,
+  marketValue: Schema.optional(Schema.Number),
+  percentage: Schema.optional(Schema.Number),
 });
 export type PortfolioAssetAllocation = Schema.Schema.Type<typeof PortfolioAssetAllocation>;
 
@@ -464,9 +468,9 @@ export const PortfolioHoldingSnapshotSummary = Schema.Struct({
   symbol: Schema.String,
   assetType: Schema.optional(AssetType),
   instrumentName: Schema.optional(Schema.String),
-  marketValue: Schema.Number,
-  pnlAbsolute: Schema.Number,
-  pnlPercent: Schema.Number,
+  marketValue: Schema.optional(Schema.Number),
+  pnlAbsolute: Schema.optional(Schema.Number),
+  pnlPercent: Schema.optional(Schema.Number),
   quantity: Schema.Number,
   priceProvenance: Schema.optional(
     Schema.Struct({

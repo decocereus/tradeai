@@ -80,6 +80,8 @@ describe("db / portfolio serialization", () => {
         ],
         summary: {
           holdingsCount: 1,
+          valuedHoldingsCount: 1,
+          unvaluedHoldingsCount: 0,
           totalMarketValue: 125255,
           totalPnlAbsolute: 15255,
           weightedPnlPercent: 13.87,

@@ -118,6 +118,100 @@ describe("api server", () => {
     expect(payload.data).toEqual([quote]);
   });
 
+  it("surfaces partial quote lookup failures with successful rows", async () => {
+    const quote: EquityQuoteSnapshot = {
+      instrumentKey: "NSE_RELIANCE",
+      exchange: "NSE",
+      tradingSymbol: "RELIANCE",
+      shortName: "Reliance",
+      instrumentType: "EQ",
+      lastPrice: 2500,
+    };
+    const handler = createApiRequestHandler({
+      apiAuthToken,
+      marketSources: {
+        searchEquityInstruments: (query) =>
+          Effect.succeed([
+            {
+              instrumentKey: `NSE_${query}`,
+              exchange: "NSE",
+              tradingSymbol: query,
+              shortName: query === "RELIANCE" ? "Reliance" : query,
+              instrumentType: "EQ",
+            },
+          ]),
+        fetchEquityQuotes: () =>
+          Effect.fail(
+            Object.assign(new Error("partial Groww quote failure"), {
+              quotes: [
+                {
+                  instrumentKey: "NSE_RELIANCE",
+                  tradingSymbol: "RELIANCE",
+                  lastPrice: 2500,
+                },
+              ],
+              failures: [
+                {
+                  instrumentKey: "BROKEN",
+                  message: "Groww quote failed for BROKEN",
+                },
+              ],
+            }),
+          ),
+        buildEquityQuoteSnapshot: () => [quote],
+      },
+    });
+
+    const response = await handler(
+      authenticatedRequest("http://localhost/market/quotes?instrumentKey=RELIANCE,BROKEN"),
+    );
+    const payload = await readJson(response);
+
+    expect(response.status).toBe(206);
+    expect(payload.data).toEqual([quote]);
+    expect(payload.warnings).toEqual([
+      {
+        instrumentKey: "BROKEN",
+        message: "Groww quote failed for BROKEN",
+      },
+    ]);
+  });
+
+  it("rejects unbounded quote lookup requests", async () => {
+    const handler = createApiRequestHandler({ apiAuthToken });
+    const instrumentKeys = Array.from({ length: 51 }, (_, index) => `NSE_TEST_${index}`)
+      .map((key) => `instrumentKey=${key}`)
+      .join("&");
+
+    const response = await handler(authenticatedRequest(`http://localhost/market/quotes?${instrumentKeys}`));
+    const payload = await readJson(response);
+
+    expect(response.status).toBe(400);
+    expect(payload.error).toContain("Too many instrumentKey values");
+  });
+
+  it("deduplicates quote lookup keys before calling market sources", async () => {
+    const seenKeys: string[][] = [];
+    const handler = createApiRequestHandler({
+      apiAuthToken,
+      marketSources: {
+        searchEquityInstruments: () => Effect.succeed([]),
+        fetchEquityQuotes: (instrumentKeys) => {
+          seenKeys.push([...instrumentKeys]);
+          return Effect.succeed([]);
+        },
+        buildEquityQuoteSnapshot: () => [],
+      },
+    });
+
+    const response = await handler(
+      authenticatedRequest("http://localhost/market/quotes?instrumentKey=RELIANCE,RELIANCE&instrumentKey=TCS"),
+    );
+
+    expect(response.status).toBe(200);
+    expect(seenKeys).toEqual([["RELIANCE", "TCS"]]);
+  });
+
   it("serves operator health through the shared contract envelope", async () => {
     const handler = createApiRequestHandler({
       apiAuthToken,

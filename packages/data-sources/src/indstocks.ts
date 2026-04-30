@@ -104,12 +104,13 @@ const resolveHoldingAveragePrice = (record: IndstocksHoldingsApiRecord): number 
 const resolveHoldingExchangeSegment = (record: IndstocksHoldingsApiRecord): string =>
   record.exchange_segment || "NSE_EQ";
 
-const hasBrokerPrice = (record: IndstocksHoldingsApiRecord): boolean =>
-  typeof record.last_traded_price === "number" || typeof record.close_price === "number";
+const hasBrokerValuation = (record: IndstocksHoldingsApiRecord): boolean =>
+  typeof record.last_traded_price === "number" || typeof record.market_value === "number";
 
 export const mapIndstocksHolding = (
   record: IndstocksHoldingsApiRecord,
   quotesByScripCode: Record<string, IndstocksMarketQuoteEntry> = {},
+  quoteEnrichmentError?: string,
 ): BrokerHolding | null => {
   const securityId = record.security_id || record.isin;
   const tradingSymbol = record.trading_symbol || record.symbol || record.isin;
@@ -123,9 +124,7 @@ export const mapIndstocksHolding = (
       ? record.last_traded_price
       : typeof quote?.live_price === "number"
         ? quote.live_price
-        : isMutualFund
-          ? 0
-          : undefined;
+        : undefined;
   const closePrice =
     typeof record.close_price === "number"
       ? record.close_price
@@ -138,45 +137,60 @@ export const mapIndstocksHolding = (
     !tradingSymbol ||
     !record.isin ||
     typeof quantity !== "number" ||
-    typeof averagePrice !== "number" ||
-    typeof lastTradedPrice !== "number" ||
-    typeof closePrice !== "number"
+    typeof averagePrice !== "number"
   ) {
     return null;
   }
 
   const marketValue =
-    typeof record.market_value === "number" ? record.market_value : quantity * lastTradedPrice;
+    typeof record.market_value === "number"
+      ? record.market_value
+      : typeof lastTradedPrice === "number"
+        ? quantity * lastTradedPrice
+        : undefined;
   const pnlAbsolute =
     typeof record.pnl_absolute === "number"
       ? record.pnl_absolute
-      : (lastTradedPrice - averagePrice) * quantity;
+      : averagePrice > 0 && typeof lastTradedPrice === "number"
+        ? (lastTradedPrice - averagePrice) * quantity
+        : undefined;
   const pnlPercent =
     typeof record.pnl_percent === "number"
       ? record.pnl_percent
-      : averagePrice > 0
+      : averagePrice > 0 && typeof lastTradedPrice === "number"
         ? ((lastTradedPrice - averagePrice) / averagePrice) * 100
-        : 0;
+        : undefined;
+  const hasCurrentBrokerValuation = hasBrokerValuation(record);
+  const hasCurrentMarketValuation = typeof quote?.live_price === "number";
   const priceProvenance =
-    isMutualFund && !hasBrokerPrice(record) && !quote
+    isMutualFund && !hasCurrentBrokerValuation && !hasCurrentMarketValuation
       ? {
           status: "market_missing" as const,
           source: "fallback" as const,
           marketDataProvider: "amfi" as const,
           quoteSymbol: record.isin,
-          message: "NAV enrichment required before valuation is available.",
+          message: "NAV enrichment required; broker omitted a current mutual-fund valuation.",
         }
-      : quote && !hasBrokerPrice(record)
+      : hasCurrentMarketValuation && !hasCurrentBrokerValuation
         ? {
             status: "market_enriched" as const,
             source: "market" as const,
             marketDataProvider: "indstocks" as const,
             quoteSymbol: buildIndstocksScripCode(securityId, exchangeSegment),
           }
-        : {
-            status: "broker" as const,
-            source: "broker" as const,
-          };
+        : hasCurrentBrokerValuation
+          ? {
+              status: "broker" as const,
+              source: "broker" as const,
+              ...(quoteEnrichmentError ? { message: quoteEnrichmentError } : {}),
+            }
+          : {
+              status: quoteEnrichmentError ? "market_unavailable" as const : "market_missing" as const,
+              source: "fallback" as const,
+              marketDataProvider: "indstocks" as const,
+              quoteSymbol: buildIndstocksScripCode(securityId, exchangeSegment),
+              ...(quoteEnrichmentError ? { message: quoteEnrichmentError } : {}),
+            };
 
   return {
     broker: "indstocks",
@@ -187,11 +201,11 @@ export const mapIndstocksHolding = (
     isin: record.isin,
     quantity,
     averagePrice,
-    lastTradedPrice,
-    closePrice,
-    marketValue,
-    pnlAbsolute,
-    pnlPercent,
+    ...(lastTradedPrice !== undefined ? { lastTradedPrice } : {}),
+    ...(closePrice !== undefined ? { closePrice } : {}),
+    ...(marketValue !== undefined ? { marketValue } : {}),
+    ...(pnlAbsolute !== undefined ? { pnlAbsolute } : {}),
+    ...(pnlPercent !== undefined ? { pnlPercent } : {}),
     priceProvenance,
   };
 };
@@ -199,9 +213,10 @@ export const mapIndstocksHolding = (
 export const parseIndstocksHoldingsResponse = (
   payload: IndstocksHoldingsApiResponse,
   quotesByScripCode: Record<string, IndstocksMarketQuoteEntry> = {},
+  quoteEnrichmentError?: string,
 ): BrokerHolding[] =>
   (payload.data ?? [])
-    .map((record) => mapIndstocksHolding(record, quotesByScripCode))
+    .map((record) => mapIndstocksHolding(record, quotesByScripCode, quoteEnrichmentError))
     .filter((entry): entry is BrokerHolding => entry !== null);
 
 export const mapIndstocksTradeFill = (
@@ -339,11 +354,17 @@ export const fetchIndstocksHoldings = (
         )
         .filter((entry): entry is string => Boolean(entry));
       let quotesByScripCode: Record<string, IndstocksMarketQuoteEntry> = {};
+      let quoteEnrichmentError: string | undefined;
       if (scripCodes.length > 0) {
-        quotesByScripCode = await Effect.runPromise(fetchIndstocksMarketQuotes(scripCodes, accessToken, fetchImpl));
+        try {
+          quotesByScripCode = await Effect.runPromise(fetchIndstocksMarketQuotes(scripCodes, accessToken, fetchImpl));
+        } catch (error) {
+          quoteEnrichmentError = error instanceof Error ? error.message : String(error);
+          quotesByScripCode = {};
+        }
       }
 
-      return parseIndstocksHoldingsResponse(payload, quotesByScripCode);
+      return parseIndstocksHoldingsResponse(payload, quotesByScripCode, quoteEnrichmentError);
     },
     catch: (error) => (error instanceof Error ? error : new Error(String(error))),
   });

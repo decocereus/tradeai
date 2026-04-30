@@ -26,6 +26,25 @@ describe("data-sources / manual import", () => {
     expect(holdings[0]?.tradingSymbol).toBe("RELIANCE-EQ");
   });
 
+  it("keeps manual holdings when valuation columns are unavailable", () => {
+    const holdings = parseManualHoldingsCsv(
+      [
+        "symbol,isin,exchange_segment,quantity,average_price,last_traded_price,close_price,market_value,pnl_absolute,pnl_percent",
+        "UNVALUED-MF,INF000000000,MF,10,100,,,,,",
+      ].join("\n"),
+    );
+
+    expect(holdings).toHaveLength(1);
+    expect(holdings[0]).toMatchObject({
+      broker: "manual_csv",
+      tradingSymbol: "UNVALUED-MF",
+      quantity: 10,
+      averagePrice: 100,
+    });
+    expect(holdings[0]?.marketValue).toBeUndefined();
+    expect(holdings[0]?.pnlAbsolute).toBeUndefined();
+  });
+
   it("parses manual trade csv into normalized fills", () => {
     const fills = parseManualTradeBookCsv(tradeCsv);
     expect(fills).toHaveLength(1);
