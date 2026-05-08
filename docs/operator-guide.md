@@ -36,7 +36,6 @@ Token caveat:
 Optional:
 
 ```bash
-TRADEAI_ALLOW_PUBLIC_RESEARCH_FALLBACK=true
 TRADEAI_PERSIST_PORTFOLIO_SNAPSHOTS=true
 ```
 
@@ -193,6 +192,16 @@ bun run dev:tui -- --equity-research "RELIANCE"
 bun run dev:tui -- --events "VEDANTA"
 bun run dev:tui -- --amfi "parag parikh"
 ```
+
+### Knowledge ingestion
+
+Persist notes, transcripts, letters, or manually prepared research memos into `knowledge_documents`:
+
+```bash
+bun run dev:tui -- --knowledge-file /path/to/note.md --knowledge-title "Reliance thesis note" --knowledge-source personal_note
+```
+
+Supported `--knowledge-source` values are `personal_note`, `youtube_transcript`, `buffett_letter`, `article`, and `manual`. This command requires `DATABASE_URL`; it fails closed when local persistence is not configured.
 
 ### API server
 

@@ -79,8 +79,9 @@ Agent layers:
 
 | Module | Responsibility | Notes |
 | --- | --- | --- |
-| `data-sources` | Price, fundamentals, announcements, macro events, transcripts | Raw ingestion only |
-| `knowledge` | Transcript and Buffett-letter distillation | Reference memory, not raw prompt dumping |
+| `data-sources` | Price, funds, announcements, broker payloads, market APIs | Raw ingestion only |
+| `research-engine` | Provider payload to research packet mapping | Keeps provider adapters thin |
+| `knowledge` | Document normalization and deterministic claim retrieval | Reference memory, not raw prompt dumping |
 | `strategy-engine` | Sector and instrument scoring | Deterministic first |
 | `portfolio-engine` | Allocation and fit checks | Keeps recommendations sane |
 | `memory` | Recommendation history, trades, retrieval | Powers yes/yes and yes/no logic |
@@ -99,8 +100,9 @@ This is the current implemented layout.
 | `apps/api` | Thin HTTP interface over `createTradeAiWorkflowService()` |
 | `packages/domain` | Shared types, schemas, enums, recommendation contracts |
 | `packages/db` | Drizzle schema, migrations, and queries |
-| `packages/data-sources` | Connectors for market, fundamentals, funds, and knowledge ingestion |
-| `packages/knowledge` | Placeholder package for transcript and Buffett-letter distillation |
+| `packages/data-sources` | Connectors for market, broker, funds, and event feeds |
+| `packages/research-engine` | Converts provider detail into `ResearchPacket` values |
+| `packages/knowledge` | Builds persisted knowledge documents and retrieves matching claims |
 | `packages/strategy-engine` | Deterministic scoring and ranking logic |
 | `packages/agent-runtime` | Pi-agent orchestration, tools, and prompting |
 | `packages/portfolio-engine` | Allocation and portfolio-fit logic |
@@ -223,6 +225,15 @@ The system should then decide:
 
 We should not "train the model" on raw transcripts first. We should distill knowledge into structured memory.
 
+Implemented first pass:
+
+1. `--knowledge-file` reads a note/transcript/letter/memo from disk.
+2. `app-services` normalizes it into a `KnowledgeDocument`.
+3. `db` persists it in `knowledge_documents`.
+4. equity research retrieves matching claims and returns them as `knowledgeContext`, separate from prior-run `memoryContext`.
+
+The current retrieval is deterministic keyword matching over persisted documents. `pgvector` remains the next step for semantic retrieval, not a prerequisite for truthful source attribution.
+
 ### YouTube Workflow
 
 1. Fetch or generate transcript.
@@ -326,10 +337,11 @@ This keeps us clear of unnecessary execution complexity early on.
 | `M4` | Sector and instrument scoring works deterministically |
 | `M5` | Agent synthesis produces structured recommendations |
 | `M6` | Memory, thesis comparison, and TUI workflow work end-to-end |
+| `M7` | Knowledge documents can be ingested and retrieved as first-class research context |
 
 ## Open Questions
 
 - Which broker or market-data source should become the primary source for v1?
 - How much daily automation should run versus manual triggers?
 - How opinionated should Buffett-derived principles be inside the scoring engine?
-- Do we want `apps/api` in the first scaffold, or should the first runnable entrypoint be only `apps/tui`?
+- Should the HTTP API stay read-only, or should selected authenticated write workflows move there after the TUI path settles?

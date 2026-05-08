@@ -10,6 +10,7 @@ TradeAI is no longer just a design exercise. It is now a working private investi
 - live INDstocks holdings sync
 - Groww market quote enrichment for broker-held stocks
 - persisted portfolio snapshots and review history
+- persisted knowledge documents and deterministic knowledge-claim retrieval
 - deterministic recommendation logic
 - a Pi-based harness path for future chat/operator experiences
 
@@ -60,28 +61,30 @@ The app persists:
 - broker portfolio snapshots
 - broker trade fills
 - holding review history
+- source knowledge documents such as notes, transcripts, letters, and research memos
 
 ### Research and review
 
 The system currently combines:
 
 - deterministic scoring
-- public fundamentals enrichment
+- Aftermarkets research packets
 - BSE events
 - memory/history comparison
+- retrieved knowledge claims from persisted source material
 
 For INDstocks-held positions specifically, the live review flow now uses:
 
 - Groww live quotes for portfolio price enrichment
 - INDstocks historical data
-- public fundamentals
-- public events
+- Aftermarkets research where configured
+- persisted review history and retrieved knowledge context
 
-This means the live broker review path is now much more grounded than the earlier fallback-only version.
+If authenticated research fails, the review reports an error for that holding instead of substituting a looser public source.
 
 ### Terminal UX
 
-The TUI has three practical modes:
+The TUI has five practical modes:
 
 1. Home mode
    Running `bun run dev:tui` opens a dashboard-first home screen when persisted data exists.
@@ -122,6 +125,14 @@ bun run dev:tui -- --holding-history NIFTYBEES --holding-history-broker indstock
 bun run dev:tui -- --manual-decision --import-holdings /path/to/holdings.csv --import-trades /path/to/trades.csv
 ```
 
+### Knowledge flows
+
+```bash
+bun run dev:tui -- --knowledge-file /path/to/note.md --knowledge-title "Reliance thesis note" --knowledge-source personal_note
+```
+
+Persisted documents are retrieved during equity research and returned as `knowledgeContext`, separate from prior-run `memoryContext`.
+
 ### Pi harness path
 
 ```bash
@@ -137,7 +148,8 @@ bun run dev:tui -- --pi "Summarize the current portfolio state."
 - INDstocks historical candles
 - Groww market quotes
 - public BSE events
-- public fundamentals pages
+- Aftermarkets research payloads
+- persisted knowledge documents
 
 ### Derived by TradeAI
 
@@ -147,6 +159,7 @@ bun run dev:tui -- --pi "Summarize the current portfolio state."
 - review streaks
 - status changes
 - action lists
+- retrieved knowledge claims
 
 ### System judgment, not market truth
 
@@ -164,7 +177,7 @@ The system has Pi wiring and a TUI harness path, but the main experience is stil
 
 ### Research is still mixed-source
 
-The live broker-held review path uses INDstocks for portfolio identity/history and Groww for quote enrichment. Broader research still combines Aftermarkets/public sources.
+The live broker-held review path uses INDstocks for portfolio identity/history and Groww for quote enrichment. Broader research currently uses Aftermarkets plus persisted memory/knowledge context. Missing authenticated research is surfaced as unavailable instead of silently replaced.
 
 ### Groww trade-book/history is explicitly unsupported
 
@@ -176,6 +189,6 @@ Position-based dashboard sections show company/instrument names, but review reco
 
 ## What We Should Build Next
 
-1. Improve the mixed-source research contract around Aftermarkets plus broker-held positions.
-2. Build the real chat/operator console on top of Pi so commands are no longer the main interaction style.
-3. Carry display names all the way through review records and history surfaces.
+1. Build the real chat/operator console on top of Pi so commands are no longer the main interaction style.
+2. Carry display names all the way through review records and history surfaces.
+3. Add richer knowledge ingestion pipelines for transcript chunking and claim distillation.

@@ -20,7 +20,10 @@ flowchart LR
     T --> S["app-services workflow service"]
     API --> S
     S --> DS["data-sources"]
+    S --> RE["research-engine"]
+    S --> K["knowledge"]
     DS --> DB["db (Postgres now, pgvector later)"]
+    K --> DB
     DB --> ST["strategy-engine"]
     DB --> M["memory"]
     ST --> A["agent-runtime"]
@@ -36,8 +39,8 @@ flowchart TB
     UI["Interface layer<br/>apps/tui, later apps/web/API"]
     APP["Application layer<br/>createTradeAiWorkflowService"]
     AGENT["Agent layer<br/>pi-coding-agent SDK"]
-    CORE["Core logic layer<br/>strategy-engine, portfolio-engine, memory"]
-    DATA["Data layer<br/>db, data-sources, knowledge ingestion"]
+    CORE["Core logic layer<br/>strategy-engine, portfolio-engine, research-engine, memory, knowledge"]
+    DATA["Data layer<br/>db, data-sources"]
 
     UI --> APP
     APP --> AGENT
@@ -71,6 +74,7 @@ flowchart TB
         DB["packages/db"]
         SOURCES["packages/data-sources"]
         KNOW["packages/knowledge"]
+        RESEARCH["packages/research-engine"]
         STRAT["packages/strategy-engine"]
         PORT["packages/portfolio-engine"]
         MEM["packages/memory"]
@@ -82,7 +86,9 @@ flowchart TB
     API --> APPSVC
     APPSVC --> STRAT
     APPSVC --> PORT
+    APPSVC --> RESEARCH
     APPSVC --> MEM
+    APPSVC --> KNOW
     APPSVC --> AGENT
     STRAT --> DB
     PORT --> DB
@@ -102,7 +108,8 @@ flowchart TB
 | `apps/api` | HTTP interface for workflow reads | `createTradeAiWorkflowService()`, request params | JSON workflow results |
 | `app-services` | Public workflow port plus internal workflow modules | typed workflow inputs | completed workflows |
 | `data-sources` | Pulls market and source data | APIs, feeds, files | normalized raw records |
-| `knowledge` | Distills transcripts and letters | transcript text, letters | `KnowledgeDocument`, `KnowledgeClaim` |
+| `research-engine` | Shapes provider detail into research packets | provider payloads, events | `ResearchPacket` |
+| `knowledge` | Normalizes source material and retrieves matching claims | notes, transcripts, letters | `KnowledgeDocument`, `KnowledgeContext` |
 | `db` | Persists facts and history | domain records | queries and storage |
 | `strategy-engine` | Scores sectors and instruments | snapshots, metrics | scores and labels |
 | `portfolio-engine` | Checks diversification and fit | holdings, candidates | fit score, allocation guidance |
@@ -126,9 +133,9 @@ sequenceDiagram
     D->>DB: Save snapshots
     S->>SE: Score sectors and instruments
     SE->>DB: Save scores
-    S->>M: Load prior runs and knowledge
-    M-->>S: Context
-    S->>A: Build recommendation run
+    S->>M: Load prior runs
+    S->>DB: Load persisted knowledge documents
+    S->>A: Build recommendation run with memory and knowledge context
     A-->>S: Structured recommendations
     S->>DB: Persist run
     S-->>U: Show sectors, candidates, and thesis diffs
@@ -141,10 +148,10 @@ flowchart LR
     Y["YouTube transcript"] --> K["knowledge"]
     B["Buffett letters"] --> K
     N["Personal notes"] --> K
-    K --> C["distilled claims"]
+    K --> C["retrieved claims"]
     C --> DB["relational tables now, pgvector later"]
-    DB --> M["memory retrieval"]
-    M --> A["agent-runtime"]
+    DB --> S["app-services research workflow"]
+    S --> A["agent-runtime"]
 ```
 
 ## Design Rules
@@ -176,6 +183,7 @@ The current runtime is:
 - using `pi-coding-agent` as the default harness and `pi-tui` for custom components only
 - persisting to Postgres
 - using `INDstocks` for live broker data
-- using public data sources for enrichment
+- using Groww, AMFI, BSE, and Aftermarkets for enrichment
+- exposing persisted knowledge as first-class `knowledgeContext`
 
 `apps/api` is now a thin HTTP interface over `createTradeAiWorkflowService()`. It should remain read-first until background scheduling, writes, or external hooks need explicit product rules.

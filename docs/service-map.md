@@ -8,8 +8,9 @@ This is the shortest readable map of the system.
 | --- | --- | --- |
 | `apps/tui` | Terminal UI for running research and reviewing results | `app-services` workflow service |
 | `app-services` | Exposes `createTradeAiWorkflowService()` as the stable UI/API/plugin port | all core packages |
-| `data-sources` | Pulls market, company, event, and source-material data | external APIs and files |
-| `knowledge` | Converts transcripts and Buffett letters into reusable claims | `db` |
+| `data-sources` | Pulls market, broker, fund, and event data | external APIs and files |
+| `research-engine` | Converts provider payloads into scored research packets | `domain`, `strategy-engine` |
+| `knowledge` | Normalizes source material and retrieves reusable claims | `db`, persisted documents |
 | `db` | Stores facts, runs, trades, and persisted state | Postgres now, pgvector later |
 | `strategy-engine` | Scores sectors and instruments deterministically | `db`, `domain` |
 | `portfolio-engine` | Checks fit, concentration, and allocation sanity | `db`, `domain` |
@@ -26,7 +27,10 @@ flowchart LR
     APP --> MEM["memory"]
     APP --> AGENT["agent-runtime"]
     APP --> SRC["data-sources"]
+    APP --> RE["research-engine"]
+    APP --> KNOW["knowledge"]
     SRC --> DB["db"]
+    KNOW --> DB
     STRAT --> DB
     PORT --> DB
     MEM --> DB
@@ -39,7 +43,8 @@ flowchart LR
 - `data-sources` gets facts into the system
 - `db` stores them
 - `strategy-engine` turns facts into scores
-- `memory` adds history and retrieved knowledge
+- `memory` adds prior review history
+- `knowledge` adds retrieved reference claims as separate `knowledgeContext`
 - `agent-runtime` turns all of that into a readable recommendation
 - `app-services` exposes the UI-agnostic workflow service and keeps lower-level workflow modules internal
 - `apps/tui` is one consumer of that service, not the owner of workflow logic
@@ -56,13 +61,12 @@ const tradeAi = createTradeAiWorkflowService({
     brokerAccessToken,
     marketAccessToken,
     databaseUrl,
-    allowPublicResearchFallback,
     persistPortfolioSnapshots,
   },
 });
 ```
 
-The service is the supported boundary for TUI, future API routes, web UI, and plugin/agent integrations. Runtime config, repositories, and source adapters are injected at service construction. Internal modules such as `research-workflows`, `portfolio-workflows`, and `review-workflows` remain useful for focused package tests and implementation work, but interface code should not import them directly.
+The service is the supported boundary for TUI, future API routes, web UI, and plugin/agent integrations. Runtime config, repositories, knowledge retrieval, and source adapters are injected at service construction. Internal modules such as `research-workflows`, `portfolio-workflows`, and `review-workflows` remain useful for focused package tests and implementation work, but interface code should not import them directly.
 
 ## First Runnable Slice
 
