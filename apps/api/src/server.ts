@@ -2,15 +2,16 @@ import type { BrokerSource } from "@tradeai/domain";
 import {
   createTradeAiWorkflowService,
   MAX_EQUITY_QUOTE_KEYS,
+  buildRuntimeConfigFromEnv,
+  buildOperatorErrorEnvelope,
+  buildOperatorSuccessEnvelope,
   normalizeEquityQuoteKeys,
   type CreateTradeAiWorkflowServiceOptions,
-  type EquityQuoteSnapshotFailure,
+  type EquityQuoteSnapshotBatch,
   type TradeAiWorkflowService,
 } from "@tradeai/app-services";
 import { Effect } from "effect";
 import { timingSafeEqual } from "node:crypto";
-
-import { buildRuntimeConfigFromEnv } from "./runtime-config.ts";
 
 const API_AUTH_TOKEN_ENV = "TRADEAI_API_TOKEN";
 export interface ApiServerOptions extends CreateTradeAiWorkflowServiceOptions {
@@ -29,38 +30,6 @@ const jsonResponse = (payload: unknown, init?: ResponseInit) =>
 
 const errorResponse = (status: number, message: string) =>
   jsonResponse({ error: message }, { status });
-
-const isPartialEquityQuoteSnapshotsError = (
-  error: unknown,
-): error is {
-  snapshots: readonly unknown[];
-  failures: readonly EquityQuoteSnapshotFailure[];
-} =>
-  typeof error === "object" &&
-  error !== null &&
-  Array.isArray((error as { snapshots?: unknown }).snapshots) &&
-  Array.isArray((error as { failures?: unknown }).failures);
-
-const contractResponse = (command: string, data: unknown) =>
-  jsonResponse({
-    ok: true,
-    command,
-    schemaVersion: "tradeai.cli.v1",
-    generatedAt: new Date().toISOString(),
-    data,
-  });
-
-const contractErrorResponse = (command: string, status: number, error: string) =>
-  jsonResponse(
-    {
-      ok: false,
-      command,
-      schemaVersion: "tradeai.cli.v1",
-      generatedAt: new Date().toISOString(),
-      error,
-    },
-    { status },
-  );
 
 const parseBroker = (value: string | null): BrokerSource | undefined => {
   if (value === null || value === "") return undefined;
@@ -86,6 +55,7 @@ const resolveService = (options: ApiServerOptions = {}) =>
       ...(options.marketSources ? { marketSources: options.marketSources } : {}),
       ...(options.researchSources ? { researchSources: options.researchSources } : {}),
       ...(options.memorySource ? { memorySource: options.memorySource } : {}),
+      ...(options.knowledgeSource ? { knowledgeSource: options.knowledgeSource } : {}),
       ...(options.repositories ? { repositories: options.repositories } : {}),
     },
   );
@@ -164,36 +134,33 @@ const runJson = async <T>(effect: Effect.Effect<T, Error>) => {
   }
 };
 
-const runQuoteSnapshotsJson = async <T>(effect: Effect.Effect<T, Error>) => {
-  const result = await Effect.runPromise(Effect.either(effect));
-  if (result._tag === "Right") {
-    return jsonResponse({ data: result.right });
+const runQuoteSnapshotsJson = async (effect: Effect.Effect<EquityQuoteSnapshotBatch, Error>) => {
+  try {
+    const result = await Effect.runPromise(effect);
+    if (result.status === "partial") {
+      return jsonResponse(
+        {
+          data: result.snapshots,
+          warnings: result.failures.map((failure) => ({
+            instrumentKey: failure.instrumentKey,
+            message: failure.message,
+          })),
+        },
+        { status: 206 },
+      );
+    }
+    return jsonResponse({ data: result.snapshots });
+  } catch (error) {
+    return errorResponse(500, error instanceof Error ? error.message : String(error));
   }
-  if (isPartialEquityQuoteSnapshotsError(result.left)) {
-    return jsonResponse(
-      {
-        data: result.left.snapshots,
-        warnings: result.left.failures.map((failure) => ({
-          instrumentKey: failure.instrumentKey,
-          message: failure.message,
-        })),
-      },
-      { status: 206 },
-    );
-  }
-  return errorResponse(500, result.left.message);
 };
 
 const runContractJson = async <T>(command: string, effect: Effect.Effect<T, Error>) => {
   try {
     const result = await Effect.runPromise(effect);
-    return contractResponse(command, result);
+    return jsonResponse(buildOperatorSuccessEnvelope(command, result));
   } catch (error) {
-    return contractErrorResponse(
-      command,
-      500,
-      error instanceof Error ? error.message : String(error),
-    );
+    return jsonResponse(buildOperatorErrorEnvelope(command, error), { status: 500 });
   }
 };
 
@@ -260,7 +227,7 @@ export const createApiRequestHandler = (options: ApiServerOptions = {}) => {
           `Too many instrumentKey values. Maximum allowed is ${MAX_EQUITY_QUOTE_KEYS}.`,
         );
       }
-      return runQuoteSnapshotsJson(tradeAi.getEquityQuoteSnapshots({ instrumentKeys }));
+      return runQuoteSnapshotsJson(tradeAi.getEquityQuoteSnapshotBatch({ instrumentKeys }));
     }
 
     if (url.pathname === "/research/equity") {

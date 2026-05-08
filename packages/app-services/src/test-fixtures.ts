@@ -55,6 +55,7 @@ export const buildMockResearchResult = (overrides?: {
         previousConviction: 50,
         notes: ["deterministic test memory"],
       },
+      { query: overrides?.symbol ?? "RELIANCE", claims: [], notes: [] },
       (_sectorScore, _instrumentScore, _portfolioFit, _memoryContext) =>
         Effect.succeed({
           verdict: overrides?.verdict ?? "buy",

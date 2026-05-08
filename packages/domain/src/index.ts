@@ -76,6 +76,43 @@ export const MemoryContext = Schema.Struct({
 });
 export type MemoryContext = Schema.Schema.Type<typeof MemoryContext>;
 
+export const KnowledgeSourceType = Schema.Literal(
+  "youtube_transcript",
+  "buffett_letter",
+  "personal_note",
+  "article",
+  "manual",
+);
+export type KnowledgeSourceType = Schema.Schema.Type<typeof KnowledgeSourceType>;
+
+export const KnowledgeDocument = Schema.Struct({
+  id: Schema.String,
+  sourceType: KnowledgeSourceType,
+  title: Schema.String,
+  body: Schema.String,
+  metadata: Schema.Record({ key: Schema.String, value: Schema.Unknown }),
+  createdAt: Schema.String,
+});
+export type KnowledgeDocument = Schema.Schema.Type<typeof KnowledgeDocument>;
+
+export const KnowledgeClaim = Schema.Struct({
+  documentId: Schema.String,
+  sourceType: KnowledgeSourceType,
+  title: Schema.String,
+  claim: Schema.String,
+  tags: Schema.Array(Schema.String),
+  confidence: Schema.Number,
+  provenance: Schema.String,
+});
+export type KnowledgeClaim = Schema.Schema.Type<typeof KnowledgeClaim>;
+
+export const KnowledgeContext = Schema.Struct({
+  query: Schema.String,
+  claims: Schema.Array(KnowledgeClaim),
+  notes: Schema.Array(Schema.String),
+});
+export type KnowledgeContext = Schema.Schema.Type<typeof KnowledgeContext>;
+
 export const Recommendation = Schema.Struct({
   verdict: RecommendationVerdict,
   conviction: Schema.Number,
@@ -101,7 +138,6 @@ export const TechnicalAnalysisSnapshot = Schema.Struct({
 export type TechnicalAnalysisSnapshot = Schema.Schema.Type<typeof TechnicalAnalysisSnapshot>;
 
 export const ResearchQualitySource = Schema.Literal(
-  "demo",
   "indstocks",
   "market",
   "aftermarkets",
@@ -122,7 +158,6 @@ export const MissingResearchSignal = Schema.Literal(
 export type MissingResearchSignal = Schema.Schema.Type<typeof MissingResearchSignal>;
 
 export const ResearchFallbackUsed = Schema.Literal(
-  "public_research",
   "symbol_match",
   "neutral_score_defaults",
 );
@@ -138,7 +173,7 @@ export type ResearchQuality = Schema.Schema.Type<typeof ResearchQuality>;
 
 export const ResearchPacket = Schema.Struct({
   runLabel: Schema.String,
-  source: Schema.Literal("demo", "market_quote", "indstocks_quote", "aftermarkets"),
+  source: Schema.Literal("market_quote", "indstocks_quote", "aftermarkets"),
   sector: SectorSnapshot,
   instrument: InstrumentSnapshot,
   instrumentIsin: Schema.optional(Schema.String),
@@ -157,6 +192,7 @@ export const DailyResearchResult = Schema.Struct({
   instrumentScore: ScoreBreakdown,
   portfolioFit: PortfolioFit,
   memoryContext: MemoryContext,
+  knowledgeContext: KnowledgeContext,
   recommendation: Recommendation,
   technicalAnalysis: Schema.optional(TechnicalAnalysisSnapshot),
   researchQuality: ResearchQuality,

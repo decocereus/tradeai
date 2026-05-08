@@ -3,7 +3,6 @@ import { Effect } from "effect";
 
 import {
   buildAftermarketsResearchPacket,
-  buildResearchPacketFromAftermarketsStockDetail,
   parseAftermarketsToolResponse,
   resolveAftermarketsApiKey,
 } from "./aftermarkets.ts";
@@ -77,17 +76,6 @@ describe("data-sources / aftermarkets", () => {
 
     expect(envelope.data?.stock?.symbol).toBe("RELIANCE");
     expect(envelope.freshness).toBe("eod");
-  });
-
-  it("maps stock detail into a research packet", () => {
-    const packet = buildResearchPacketFromAftermarketsStockDetail(stockDetailEnvelope);
-
-    expect(packet.source).toBe("aftermarkets");
-    expect(packet.instrument.symbol).toBe("RELIANCE");
-    expect(packet.instrument.financialQuality).toBe(50);
-    expect(packet.instrument.businessQuality).toBe(20);
-    expect(packet.technicalAnalysis?.trend).toBe("bullish");
-    expect(packet.researchQuality?.source).toBe("aftermarkets");
   });
 
   it("fetches research through the MCP tool endpoint", async () => {

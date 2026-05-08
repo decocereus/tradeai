@@ -3,10 +3,15 @@ import { Effect } from "effect";
 
 import {
   getEquityQuoteSnapshots,
+  getEquityQuoteSnapshotBatch,
   lookupAmfiNav,
   lookupCorporateEvents,
   searchEquities,
 } from "./market-workflows.ts";
+import {
+  ingestKnowledgeDocument,
+  type KnowledgeDocumentIngestionInput,
+} from "./knowledge-workflows.ts";
 import {
   canPersistPortfolioMemory,
   diffBrokerPortfolioAgainstLatestSnapshot,
@@ -21,10 +26,8 @@ import {
   type ManualPortfolioImportInput,
 } from "./portfolio-workflows.ts";
 import {
-  runDemoResearchSnapshotWithDependencies,
   runEquityResearch,
   runIndstocksPositionResearch,
-  runPublicEquityResearch,
   type EquityResearchInput,
 } from "./research-workflows.ts";
 import {
@@ -147,6 +150,14 @@ const mergeHoldingReviewTrendInput = (
   ...input,
 });
 
+const mergeKnowledgeDocumentIngestionInput = (
+  config: TradeAiRuntimeConfig,
+  input: KnowledgeDocumentIngestionInput,
+): KnowledgeDocumentIngestionInput => ({
+  ...(config.databaseUrl ? { databaseUrl: config.databaseUrl } : {}),
+  ...input,
+});
+
 const mergeManualPortfolioImportInput = (
   config: TradeAiRuntimeConfig,
   input: ManualPortfolioImportInput,
@@ -169,9 +180,6 @@ const mergeBrokerPortfolioReviewInput = (
   ...mergeBrokerPortfolioInput(config, input),
   options: {
     researchRunners: input.options?.researchRunners ?? createReviewResearchRunners(dependencies),
-    ...(config.allowPublicResearchFallback !== undefined
-      ? { allowPublicResearchFallback: config.allowPublicResearchFallback }
-      : {}),
     ...input.options,
   },
 });
@@ -209,9 +217,6 @@ const mergeManualPortfolioDecisionInput = (
   },
   options: {
     researchRunners: input.options?.researchRunners ?? createReviewResearchRunners(dependencies),
-    ...(config.allowPublicResearchFallback !== undefined
-      ? { allowPublicResearchFallback: config.allowPublicResearchFallback }
-      : {}),
     ...input.options,
   },
 });
@@ -240,7 +245,6 @@ const createReviewResearchRunners = (
         },
         dependencies,
       ),
-    runPublicEquityResearch: (input) => runPublicEquityResearch(input, dependencies),
   };
 };
 
@@ -254,7 +258,6 @@ export const createTradeAiWorkflowService = (
     canPersistPortfolioMemory: (input: BrokerPortfolioWorkflowInput = {}) =>
       canPersistPortfolioMemory(mergeBrokerPortfolioInput(config, input).databaseUrl, dependencies),
 
-    runDemoResearchSnapshot: () => runDemoResearchSnapshotWithDependencies(dependencies),
     getProviderHealth: (input: ProviderHealthInput = {}) =>
       getProviderHealth(mergeProviderHealthInput(config, input), dependencies),
     getDailyOperatorReport: (input: DailyOperatorInput = {}) =>
@@ -290,9 +293,20 @@ export const createTradeAiWorkflowService = (
 
     lookupAmfiNav: (query: string) => lookupAmfiNav(query, dependencies),
     lookupCorporateEvents: (query: string) => lookupCorporateEvents(query, dependencies),
+    ingestKnowledgeDocument: (input: KnowledgeDocumentIngestionInput) =>
+      ingestKnowledgeDocument(
+        mergeKnowledgeDocumentIngestionInput(config, input),
+        dependencies,
+      ),
     searchEquities: (query: string) => searchEquities(query, dependencies),
     getEquityQuoteSnapshots: (input: EquityQuoteSnapshotsInput) =>
       getEquityQuoteSnapshots(
+        input.instrumentKeys,
+        input.accessToken ?? config.growwAccessToken ?? config.marketAccessToken ?? config.accessToken,
+        dependencies,
+      ),
+    getEquityQuoteSnapshotBatch: (input: EquityQuoteSnapshotsInput) =>
+      getEquityQuoteSnapshotBatch(
         input.instrumentKeys,
         input.accessToken ?? config.growwAccessToken ?? config.marketAccessToken ?? config.accessToken,
         dependencies,

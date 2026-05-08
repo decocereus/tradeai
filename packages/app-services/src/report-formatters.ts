@@ -20,6 +20,9 @@ export const summarizeDailyResearch = (result: DailyResearchResult) =>
     `conviction=${result.recommendation.conviction}`,
     `stability=${result.recommendation.stability}`,
     `quality=${result.researchQuality.completeness}`,
+    result.knowledgeContext.claims.length > 0
+      ? `knowledgeClaims=${result.knowledgeContext.claims.length}`
+      : undefined,
     result.researchQuality.missingSignals.length > 0
       ? `missing=${result.researchQuality.missingSignals.join(",")}`
       : undefined,

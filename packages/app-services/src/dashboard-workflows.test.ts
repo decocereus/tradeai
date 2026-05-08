@@ -2,8 +2,11 @@ import { describe, expect, it } from "bun:test";
 
 import {
   buildAssetAllocation,
-  buildHoldingStatusChanges,
   buildPortfolioHoldingLeaders,
+} from "@tradeai/portfolio-engine";
+
+import {
+  buildHoldingStatusChanges,
   buildTodaysActionList,
 } from "./dashboard-workflows.ts";
 

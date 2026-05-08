@@ -9,6 +9,7 @@ import {
   summarizePortfolioDiff,
   summarizePortfolioSyncReport,
   summarizeBrokerTradeFill,
+  summarizeProviderHealthReport,
 } from "../../packages/app-services/src/index.ts";
 import { Type } from "@mariozechner/pi-ai";
 import { Effect } from "effect";
@@ -20,22 +21,20 @@ import {
 
 const tradeAi = createTradeAiWorkflowService();
 
-const tradeAiSnapshotTool = defineTool({
-  name: "tradeai_daily_research_snapshot",
-  label: "TradeAI Snapshot",
-  description: "Return the explicit demo TradeAI research snapshot and recommendation summary.",
+const tradeAiProviderHealthTool = defineTool({
+  name: "tradeai_provider_health",
+  label: "TradeAI Provider Health",
+  description: "Check configured TradeAI broker, market, research, NAV, and database providers.",
   parameters: Type.Object({}),
   async execute() {
-    const result = await Effect.runPromise(tradeAi.runDemoResearchSnapshot());
-    const summary = summarizeDailyResearch(result);
+    const report = await Effect.runPromise(tradeAi.getProviderHealth());
+    const summary = summarizeProviderHealthReport(report);
 
     return {
       content: [{ type: "text", text: summary }],
       details: {
-        runLabel: result.runLabel,
-        verdict: result.recommendation.verdict,
-        conviction: result.recommendation.conviction,
-        instrument: result.instrument.symbol,
+        status: report.status,
+        checks: report.checks.length,
       },
     };
   },
@@ -366,7 +365,7 @@ const tradeAiPortfolioDashboardTool = defineTool({
 });
 
 export default function tradeAiExtension(pi: ExtensionAPI) {
-  pi.registerTool(tradeAiSnapshotTool);
+  pi.registerTool(tradeAiProviderHealthTool);
   pi.registerTool(tradeAiAmfiNavLookupTool);
   pi.registerTool(tradeAiEquitySearchTool);
   pi.registerTool(tradeAiEquityQuoteTool);
@@ -381,10 +380,10 @@ export default function tradeAiExtension(pi: ExtensionAPI) {
   pi.registerTool(tradeAiPortfolioDashboardTool);
 
   pi.registerCommand("tradeai-status", {
-    description: "Show the explicit demo TradeAI research snapshot.",
+    description: "Show TradeAI provider health.",
     handler: async (_args: string, ctx: ExtensionCommandContext) => {
-      const result = await Effect.runPromise(tradeAi.runDemoResearchSnapshot());
-      ctx.ui.notify(summarizeDailyResearch(result), "info");
+      const report = await Effect.runPromise(tradeAi.getProviderHealth());
+      ctx.ui.notify(summarizeProviderHealthReport(report), "info");
     },
   });
 

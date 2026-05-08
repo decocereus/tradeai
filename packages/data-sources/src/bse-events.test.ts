@@ -6,7 +6,6 @@ import {
   fetchBseAnnouncements,
   filterCorporateEvents,
   parseBseAnnouncementsXml,
-  scoreCorporateEventSignal,
   searchBseAnnouncements,
 } from "./bse-events.ts";
 
@@ -47,11 +46,6 @@ describe("data-sources / bse events", () => {
 
     expect(filtered).toHaveLength(1);
     expect(filtered[0]?.description).toContain("Financial Results");
-  });
-
-  it("scores event signal based on important keywords", () => {
-    const events = parseBseAnnouncementsXml(sampleXml);
-    expect(scoreCorporateEventSignal(events)).toBeGreaterThan(1);
   });
 
   it("fetches and parses the bse announcements feed", async () => {

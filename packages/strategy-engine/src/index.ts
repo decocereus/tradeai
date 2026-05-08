@@ -1,5 +1,7 @@
 import type { InstrumentSnapshot, ScoreBreakdown, SectorSnapshot } from "@tradeai/domain";
 
+export { inferSectorFromEvidence } from "./sector-inference.ts";
+
 const clampScore = (value: number) => Math.max(0, Math.min(100, Math.round(value)));
 
 const toLabel = (score: number): ScoreBreakdown["label"] => {
@@ -52,4 +54,3 @@ export const scoreInstrument = (instrument: InstrumentSnapshot): ScoreBreakdown 
     ],
   };
 };
-

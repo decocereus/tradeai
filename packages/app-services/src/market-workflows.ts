@@ -38,6 +38,12 @@ export interface EquityQuoteSnapshotFailure {
   message: string;
 }
 
+export interface EquityQuoteSnapshotBatch {
+  status: "complete" | "partial";
+  snapshots: readonly EquityQuoteSnapshot[];
+  failures: readonly EquityQuoteSnapshotFailure[];
+}
+
 export class PartialEquityQuoteSnapshotsError extends Error {
   readonly snapshots: readonly EquityQuoteSnapshot[];
   readonly failures: readonly EquityQuoteSnapshotFailure[];
@@ -52,6 +58,20 @@ export class PartialEquityQuoteSnapshotsError extends Error {
     this.failures = failures;
   }
 }
+
+export const isPartialEquityQuoteSnapshotsError = (
+  error: unknown,
+): error is {
+  snapshots: readonly EquityQuoteSnapshot[];
+  failures: readonly EquityQuoteSnapshotFailure[];
+} =>
+  error instanceof PartialEquityQuoteSnapshotsError ||
+  (
+    typeof error === "object" &&
+    error !== null &&
+    Array.isArray((error as { snapshots?: unknown }).snapshots) &&
+    Array.isArray((error as { failures?: unknown }).failures)
+  );
 
 export const lookupAmfiNav = (
   query: string,
@@ -114,4 +134,30 @@ export const getEquityQuoteSnapshots = (
     return yield* Effect.fail(
       new PartialEquityQuoteSnapshotsError(snapshots, quoteResult.left.failures ?? []),
     );
+  });
+
+export const getEquityQuoteSnapshotBatch = (
+  instrumentKeys: readonly string[],
+  accessToken?: string,
+  dependencies: TradeAiWorkflowDependencies = defaultDependencies,
+): Effect.Effect<EquityQuoteSnapshotBatch, Error> =>
+  Effect.gen(function* () {
+    const result = yield* Effect.either(
+      getEquityQuoteSnapshots(instrumentKeys, accessToken, dependencies),
+    );
+    if (result._tag === "Right") {
+      return {
+        status: "complete",
+        snapshots: result.right,
+        failures: [],
+      };
+    }
+    if (isPartialEquityQuoteSnapshotsError(result.left)) {
+      return {
+        status: "partial",
+        snapshots: result.left.snapshots,
+        failures: result.left.failures,
+      };
+    }
+    return yield* Effect.fail(result.left);
   });

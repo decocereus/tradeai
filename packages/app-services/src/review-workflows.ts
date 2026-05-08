@@ -1,5 +1,4 @@
 import type {
-  AssetType,
   BrokerPortfolioDecisionReport,
   BrokerPortfolioReviewReport,
   BrokerSource,
@@ -13,6 +12,7 @@ import { createLogger, timed } from "@tradeai/observability";
 import {
   assessPositionAgainstResearch,
   deriveResearchQueryFromPositionSymbol,
+  inferPositionAssetType,
   summarizeHoldingResearchReviews,
 } from "@tradeai/portfolio-engine";
 import { Effect } from "effect";
@@ -29,10 +29,8 @@ import {
 import {
   type EquityResearchInput,
   type IndstocksPositionResearchInput,
-  type PublicEquityResearchInput,
   runEquityResearch,
   runIndstocksPositionResearch,
-  runPublicEquityResearch,
 } from "./research-workflows.ts";
 import {
   createTradeAiWorkflowDependencies,
@@ -42,17 +40,6 @@ import {
 const log = createLogger("app-services");
 const defaultDependencies = createTradeAiWorkflowDependencies();
 
-const resolvePositionAssetType = (position: PortfolioPositionSnapshot): AssetType => {
-  if (position.assetType) return position.assetType;
-  if (position.exchangeSegment === "MF") return "mutual_fund";
-
-  const symbol = position.symbol.toUpperCase();
-  const isin = position.isin.toUpperCase();
-  if (symbol.includes("GOLD")) return "gold";
-  if (symbol.endsWith("BEES") || isin.startsWith("INF")) return "etf";
-  return "stock";
-};
-
 export interface ReviewResearchRunners {
   runBrokerPositionResearch: (
     input: IndstocksPositionResearchInput,
@@ -60,14 +47,10 @@ export interface ReviewResearchRunners {
   runAuthenticatedEquityResearch: (
     input: EquityResearchInput,
   ) => Effect.Effect<DailyResearchResult, Error>;
-  runPublicEquityResearch: (
-    input: PublicEquityResearchInput,
-  ) => Effect.Effect<DailyResearchResult, Error>;
 }
 
 export interface ReviewWorkflowOptions {
   researchRunners?: ReviewResearchRunners;
-  allowPublicResearchFallback?: boolean;
 }
 
 export interface ReviewPortfolioPositionsInput {
@@ -95,12 +78,10 @@ export interface ManualPortfolioDecisionInput extends ManualPortfolioImportInput
 const defaultReviewResearchRunners: ReviewResearchRunners = {
   runBrokerPositionResearch: runIndstocksPositionResearch,
   runAuthenticatedEquityResearch: runEquityResearch,
-  runPublicEquityResearch,
 };
 
 const resolveReviewWorkflowOptions = (options?: ReviewWorkflowOptions) => ({
   researchRunners: options?.researchRunners ?? defaultReviewResearchRunners,
-  allowPublicResearchFallback: options?.allowPublicResearchFallback ?? true,
 });
 
 const formatResearchEvidence = (research: DailyResearchResult) => {
@@ -193,13 +174,12 @@ const resolvePortfolioReviewBroker = (
 
 export const reviewPortfolioPositionsAgainstResearch = (input: ReviewPortfolioPositionsInput) =>
   Effect.gen(function* () {
-    const { researchRunners, allowPublicResearchFallback } =
-      resolveReviewWorkflowOptions(input.options);
+    const { researchRunners } = resolveReviewWorkflowOptions(input.options);
     const reviews = yield* Effect.forEach(
       input.positions,
       (position) =>
         Effect.gen(function* () {
-          const assetType = resolvePositionAssetType(position);
+          const assetType = inferPositionAssetType(position);
           if (assetType !== "stock") {
             const allocationRole =
               assetType === "mutual_fund"
@@ -252,29 +232,9 @@ export const reviewPortfolioPositionsAgainstResearch = (input: ReviewPortfolioPo
           );
 
           if (outcome._tag === "Left") {
-            if (!allowPublicResearchFallback) {
-              const error =
-                outcome.left instanceof Error ? outcome.left.message : String(outcome.left);
-              return buildHoldingResearchReview(position, query, { error });
-            }
-
-            const fallback = yield* Effect.either(
-              researchRunners.runPublicEquityResearch({ query }),
-            );
-            if (fallback._tag === "Left") {
-              const error =
-                outcome.left instanceof Error ? outcome.left.message : String(outcome.left);
-              return buildHoldingResearchReview(position, query, { error });
-            }
-
-            const review = buildHoldingResearchReview(position, query, {
-              research: fallback.right,
-            });
-
-            return {
-              ...review,
-              reason: `${review.reason} (public fallback review: live quote/candle data unavailable)`,
-            };
+            const error =
+              outcome.left instanceof Error ? outcome.left.message : String(outcome.left);
+            return buildHoldingResearchReview(position, query, { error });
           }
 
           return buildHoldingResearchReview(position, query, {

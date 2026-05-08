@@ -62,6 +62,7 @@ describe("app-services / review workflows", () => {
         instrumentScore: { total: 60, label: "research_further", reasons: [] },
         portfolioFit: { total: 90, label: "good_fit", reasons: [] },
         memoryContext: { previousVerdict: "watch", previousConviction: 50, notes: [] },
+        knowledgeContext: { query: "RELIANCE", claims: [], notes: [] },
         recommendation: {
           verdict: "buy",
           conviction: 70,
@@ -143,7 +144,6 @@ describe("app-services / review workflows", () => {
             researchRunners: {
               runBrokerPositionResearch: () => Effect.fail(new Error("unexpected broker research")),
               runAuthenticatedEquityResearch: () => Effect.succeed(research),
-              runPublicEquityResearch: () => Effect.fail(new Error("unexpected public research")),
             },
           },
         },
@@ -217,8 +217,7 @@ describe("app-services / review workflows", () => {
         options: {
           researchRunners: {
             runBrokerPositionResearch: () => Effect.fail(new Error("unexpected broker research")),
-            runAuthenticatedEquityResearch: () => Effect.fail(new Error("missing token")),
-            runPublicEquityResearch: () => Effect.succeed(mockResearch),
+            runAuthenticatedEquityResearch: () => Effect.succeed(mockResearch),
           },
         },
       }),
@@ -248,7 +247,6 @@ describe("app-services / review workflows", () => {
           researchRunners: {
             runBrokerPositionResearch: () => Effect.fail(new Error("unexpected broker research")),
             runAuthenticatedEquityResearch: () => Effect.fail(new Error("unexpected equity research")),
-            runPublicEquityResearch: () => Effect.fail(new Error("unexpected public research")),
           },
         },
       }),
@@ -282,13 +280,8 @@ describe("app-services / review workflows", () => {
     expect(report.reviews[0]?.reason).not.toContain("unavailable%");
   });
 
-  it("can fail closed instead of falling back to public research", async () => {
+  it("reports authenticated research failures without substituting another source", async () => {
     const holdingsPath = "/tmp/tradeai-manual-review-fail-closed-holdings.csv";
-    const publicResearch = await buildMockResearchResult({
-      symbol: "RELIANCE",
-      isin: "INE002A01018",
-      verdict: "buy",
-    });
 
     await Bun.write(
       holdingsPath,
@@ -303,11 +296,9 @@ describe("app-services / review workflows", () => {
         holdingsCsvPath: holdingsPath,
         accessToken: "missing-token",
         options: {
-          allowPublicResearchFallback: false,
           researchRunners: {
             runBrokerPositionResearch: () => Effect.fail(new Error("unexpected broker research")),
             runAuthenticatedEquityResearch: () => Effect.fail(new Error("missing token")),
-            runPublicEquityResearch: () => Effect.succeed(publicResearch),
           },
         },
       }),

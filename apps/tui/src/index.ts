@@ -2,8 +2,10 @@ import {
   createPiTradeAiSession,
   inspectPiResources,
 } from "@tradeai/agent-runtime";
-import type { EquityQuoteSnapshot } from "@tradeai/domain";
 import {
+  buildOperatorErrorEnvelope,
+  buildOperatorSuccessEnvelope,
+  buildRuntimeConfigFromEnv,
   createTradeAiWorkflowService,
   summarizeBrokerHolding,
   summarizeHoldingsReview,
@@ -16,10 +18,9 @@ import {
   summarizeCorporateEvent,
   summarizeDailyResearch,
   summarizeQuoteSnapshot,
-  type EquityQuoteSnapshotFailure,
-  type TradeAiRuntimeConfig,
 } from "@tradeai/app-services";
 import { Effect } from "effect";
+import { basename } from "node:path";
 import { parseTuiCliOptions } from "./cli-options.ts";
 import {
   renderDailyOperatorReport,
@@ -29,17 +30,6 @@ import {
   renderList,
   renderProviderHealthSection,
 } from "./render.ts";
-
-const isPartialEquityQuoteSnapshotsError = (
-  error: unknown,
-): error is {
-  snapshots: readonly EquityQuoteSnapshot[];
-  failures: readonly EquityQuoteSnapshotFailure[];
-} =>
-  typeof error === "object" &&
-  error !== null &&
-  Array.isArray((error as { snapshots?: unknown }).snapshots) &&
-  Array.isArray((error as { failures?: unknown }).failures);
 
 const {
   piPrompt,
@@ -65,93 +55,29 @@ const {
   importHoldingsPath,
   importTradesPath,
   manualDecisionFlag,
+  knowledgeFilePath,
+  knowledgeTitle,
+  knowledgeSourceType,
+  knowledgeSourceError,
   jsonFlag,
   rawFlag,
   hasExplicitPrimaryAction,
 } = parseTuiCliOptions(process.argv.slice(2));
 
-interface JsonEnvelope<T> {
-  ok: boolean;
-  command: string;
-  schemaVersion: "tradeai.cli.v1";
-  generatedAt: string;
-  data?: T;
-  error?: string;
-}
-
-const writeJson = <T>(envelope: JsonEnvelope<T>) => {
+const writeJson = (envelope: unknown) => {
   process.stdout.write(`${JSON.stringify(envelope, null, 2)}\n`);
 };
 
 const writeJsonData = <T>(command: string, data: T) => {
-  writeJson({
-    ok: true,
-    command,
-    schemaVersion: "tradeai.cli.v1",
-    generatedAt: new Date().toISOString(),
-    data,
-  });
+  writeJson(buildOperatorSuccessEnvelope(command, data));
 };
 
 const writeJsonError = (command: string, error: unknown) => {
-  writeJson({
-    ok: false,
-    command,
-    schemaVersion: "tradeai.cli.v1",
-    generatedAt: new Date().toISOString(),
-    error: error instanceof Error ? error.message : String(error),
-  });
-};
-
-const readEnvValue = (name: string): string | undefined => {
-  const value = process.env[name]?.trim();
-  return value ? value : undefined;
-};
-
-const readEnvBoolean = (name: string): boolean | undefined => {
-  const value = readEnvValue(name)?.toLowerCase();
-  if (!value) return undefined;
-  if (["1", "true", "yes", "on"].includes(value)) return true;
-  if (["0", "false", "no", "off"].includes(value)) return false;
-  return undefined;
-};
-
-const buildTuiRuntimeConfig = (): TradeAiRuntimeConfig => {
-  const brokerAccessToken = readEnvValue("INDSTOCKS_ACCESS_TOKEN");
-  const growwAccessToken = readEnvValue("GROWW_ACCESS_TOKEN");
-  const marketAccessToken = readEnvValue("GROWW_ACCESS_TOKEN");
-  const brokerDataProvider = readEnvValue("TRADEAI_BROKER_DATA_PROVIDER");
-  const marketDataProvider = readEnvValue("TRADEAI_MARKET_DATA_PROVIDER");
-  const researchDataProvider = readEnvValue("TRADEAI_RESEARCH_DATA_PROVIDER");
-  const aftermarketsApiKey = readEnvValue("AFTERMARKETS_API_KEY");
-  const databaseUrl = readEnvValue("DATABASE_URL");
-  const allowPublicResearchFallback = readEnvBoolean(
-    "TRADEAI_ALLOW_PUBLIC_RESEARCH_FALLBACK",
-  );
-  const persistPortfolioSnapshots = readEnvBoolean("TRADEAI_PERSIST_PORTFOLIO_SNAPSHOTS");
-
-  return {
-    ...(growwAccessToken ? { growwAccessToken } : {}),
-    ...(brokerAccessToken ? { brokerAccessToken } : {}),
-    ...(marketAccessToken ? { marketAccessToken } : {}),
-    ...(brokerDataProvider === "groww" || brokerDataProvider === "indstocks"
-      ? { brokerDataProvider }
-      : {}),
-    ...(marketDataProvider === "groww"
-      ? { marketDataProvider }
-      : {}),
-    ...(researchDataProvider === "aftermarkets"
-      ? { researchDataProvider }
-      : {}),
-    ...(aftermarketsApiKey ? { aftermarketsApiKey } : {}),
-    ...(databaseUrl ? { databaseUrl } : {}),
-    ...(allowPublicResearchFallback !== undefined ? { allowPublicResearchFallback } : {}),
-    ...(persistPortfolioSnapshots !== undefined ? { persistPortfolioSnapshots } : {}),
-  };
+  writeJson(buildOperatorErrorEnvelope(command, error));
 };
 
 const tradeAi = createTradeAiWorkflowService({
-  config: buildTuiRuntimeConfig(),
+  config: buildRuntimeConfigFromEnv(),
 });
 const shouldAutoRenderDashboard =
   !dashboardFlag && !hasExplicitPrimaryAction && tradeAi.canPersistPortfolioMemory();
@@ -269,10 +195,52 @@ const main = Effect.gen(function* () {
     return;
   }
 
+  if (knowledgeFilePath) {
+    const command = "knowledge-ingest";
+    const report = yield* Effect.gen(function* () {
+      if (knowledgeSourceError) {
+        return yield* Effect.fail(new Error(knowledgeSourceError));
+      }
+      const body = yield* Effect.tryPromise(() => Bun.file(knowledgeFilePath).text());
+      return yield* tradeAi.ingestKnowledgeDocument({
+        sourceType: knowledgeSourceType,
+        title: knowledgeTitle || basename(knowledgeFilePath),
+        body,
+        metadata: {
+          path: knowledgeFilePath,
+        },
+      });
+    }).pipe(
+      Effect.catchAll((error) => {
+        if (jsonFlag) {
+          writeJsonError(command, error);
+        } else {
+          renderDivider("Knowledge Ingest");
+          console.log(error instanceof Error ? error.message : String(error));
+        }
+        return Effect.succeed(undefined);
+      }),
+    );
+
+    if (jsonFlag) {
+      if (report) writeJsonData(command, report);
+      return;
+    }
+
+    if (report) {
+      renderDivider("Knowledge Ingest");
+      console.log(`Document: ${report.document.id}`);
+      console.log(`Title: ${report.document.title}`);
+      console.log(`Source: ${report.document.sourceType}`);
+      console.log(`Inserted: ${report.persistence.documentsInserted}`);
+    }
+    return;
+  }
+
   if (jsonFlag) {
     writeJsonError(
       "tui",
-      new Error("JSON output is currently supported for --daily, --provider-health, and --dashboard."),
+      new Error("JSON output is currently supported for --daily, --provider-health, --dashboard, and --knowledge-file."),
     );
     return;
   }
@@ -377,27 +345,23 @@ const main = Effect.gen(function* () {
     renderDivider("Quote Snapshots");
     console.log(`Quote error: ${quoteKeysError}`);
   } else if (quoteKeys?.length) {
-    const quoteResult = yield* tradeAi.getEquityQuoteSnapshots({
+    const quoteBatch = yield* tradeAi.getEquityQuoteSnapshotBatch({
       instrumentKeys: quoteKeys,
-    }).pipe(Effect.either);
+    }).pipe(
+      Effect.catchAll((error) => {
+        console.log("\nQuote error");
+        console.log(error instanceof Error ? error.message : String(error));
+        return Effect.succeed(undefined);
+      }),
+    );
 
     renderDivider("Quote Snapshots");
     console.log(`Instrument keys: ${quoteKeys.join(", ")}`);
-    const quoteResults =
-      quoteResult._tag === "Right"
-        ? quoteResult.right
-        : isPartialEquityQuoteSnapshotsError(quoteResult.left)
-          ? quoteResult.left.snapshots
-          : [];
-    if (quoteResult._tag === "Left") {
-      if (isPartialEquityQuoteSnapshotsError(quoteResult.left)) {
-        console.log("Quote warning: partial provider failure");
-        for (const failure of quoteResult.left.failures.slice(0, 5)) {
-          console.log(`- ${failure.instrumentKey}: ${failure.message}`);
-        }
-      } else {
-        console.log("Quote error");
-        console.log(quoteResult.left.message);
+    const quoteResults = quoteBatch?.snapshots ?? [];
+    if (quoteBatch?.status === "partial") {
+      console.log("Quote warning: partial provider failure");
+      for (const failure of quoteBatch.failures.slice(0, 5)) {
+        console.log(`- ${failure.instrumentKey}: ${failure.message}`);
       }
     }
     if (quoteResults.length === 0) {

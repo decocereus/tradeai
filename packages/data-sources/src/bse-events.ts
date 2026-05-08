@@ -81,22 +81,3 @@ export const searchBseAnnouncements = (query: string, fetchImpl: typeof fetch = 
   fetchBseAnnouncements(fetchImpl).pipe(
     Effect.map((events) => filterCorporateEvents(query, events)),
   );
-
-export const scoreCorporateEventSignal = (events: readonly CorporateEvent[]): number => {
-  const signalWords = [
-    "financial results",
-    "board meeting",
-    "joint venture",
-    "settlement agreement",
-    "allotment",
-    "press release",
-    "annual report",
-    "acquisition",
-  ];
-
-  return events.reduce((score, event) => {
-    const haystack = `${event.title} ${event.description}`.toLowerCase();
-    const hitCount = signalWords.filter((word) => haystack.includes(word)).length;
-    return score + hitCount;
-  }, 0);
-};

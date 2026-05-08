@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
 import {
+  buildMemoryContextFromReviewHistory,
   buildPortfolioMemorySnapshot,
   diffPortfolioMemorySnapshots,
   summarizeHoldingReviewTrend,
@@ -130,5 +131,36 @@ describe("memory", () => {
 
     expect(trend?.latestStatus).toBe("conflict");
     expect(trend?.streakCount).toBe(2);
+  });
+
+  it("builds research memory from persisted holding review history", () => {
+    const memory = buildMemoryContextFromReviewHistory({
+      symbol: "RELIANCE-EQ",
+      history: [
+        {
+          snapshotId: "indstocks:2026-04-17T12:00:00.000Z",
+          symbol: "RELIANCE-EQ",
+          query: "RELIANCE",
+          status: "conflict",
+          reason: "Research would currently reject this holding.",
+          verdict: "reject",
+          conviction: 42,
+          runLabel: "run-2",
+          reviewedAt: "2026-04-17T12:00:00.000Z",
+        },
+      ],
+    });
+
+    expect(memory.previousVerdict).toBe("reject");
+    expect(memory.previousConviction).toBe(42);
+    expect(memory.notes[0]).toContain("RELIANCE-EQ was conflict");
+  });
+
+  it("does not invent prior memory when no persisted history exists", () => {
+    const memory = buildMemoryContextFromReviewHistory({ symbol: "RELIANCE" });
+
+    expect(memory.previousVerdict).toBe("watch");
+    expect(memory.previousConviction).toBe(50);
+    expect(memory.notes).toEqual(["No prior case memory found for RELIANCE."]);
   });
 });

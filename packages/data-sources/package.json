@@ -5,7 +5,7 @@
   "dependencies": {
     "@tradeai/domain": "workspace:*",
     "@tradeai/market-analysis": "workspace:*",
-    "@tradeai/strategy-engine": "workspace:*",
+    "@tradeai/research-engine": "workspace:*",
     "effect": "^3.21.0"
   }
 }

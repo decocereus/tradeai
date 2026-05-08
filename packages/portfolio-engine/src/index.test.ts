@@ -4,9 +4,12 @@ import type { BrokerHolding, DailyResearchResult } from "@tradeai/domain";
 
 import {
   assessPositionAgainstResearch,
+  buildAssetAllocation,
+  buildPortfolioHoldingLeaders,
   deriveResearchQueryFromPositionSymbol,
   diffPortfolioPositions,
   inferHoldingAssetType,
+  inferPositionAssetType,
   normalizeBrokerHoldings,
   scorePortfolioFit,
   summarizeHoldingResearchReviews,
@@ -77,6 +80,30 @@ describe("portfolio-engine", () => {
     expect(inferHoldingAssetType(baseHolding)).toBe("etf");
     expect(inferHoldingAssetType({ ...baseHolding, tradingSymbol: "TATAGOLD" })).toBe("gold");
     expect(inferHoldingAssetType({ ...baseHolding, exchangeSegment: "MF" })).toBe("mutual_fund");
+  });
+
+  it("classifies portfolio positions through the same asset-role rules", () => {
+    expect(
+      inferPositionAssetType({
+        symbol: "SGBJUN32",
+        instrumentName: "Sovereign Gold Bond",
+        isin: "INE000000000",
+        exchangeSegment: "NSE_EQ",
+        quantity: 1,
+        averagePrice: 1,
+        sourceBroker: "manual_csv",
+      }),
+    ).toBe("gold");
+    expect(
+      inferPositionAssetType({
+        symbol: "NIFTYBEES",
+        isin: "INF204KB14I2",
+        exchangeSegment: "NSE_EQ",
+        quantity: 1,
+        averagePrice: 1,
+        sourceBroker: "manual_csv",
+      }),
+    ).toBe("etf");
   });
 
   it("summarizes normalized positions", () => {
@@ -155,6 +182,85 @@ describe("portfolio-engine", () => {
     expect(summary.weightedPnlPercent).toBeUndefined();
   });
 
+  it("builds allocation without percentages when any position is unvalued", () => {
+    const allocation = buildAssetAllocation([
+      {
+        symbol: "RELIANCE-EQ",
+        assetType: "stock",
+        isin: "INE002A01018",
+        exchangeSegment: "NSE_EQ",
+        quantity: 1,
+        averagePrice: 100,
+        lastTradedPrice: 100,
+        marketValue: 100,
+        pnlAbsolute: 0,
+        pnlPercent: 0,
+        sourceBroker: "indstocks",
+      },
+      {
+        symbol: "UNVALUED-MF",
+        assetType: "mutual_fund",
+        isin: "INF000000000",
+        exchangeSegment: "MF",
+        quantity: 10,
+        averagePrice: 10,
+        sourceBroker: "indstocks",
+      },
+    ]);
+
+    expect(allocation.find((entry) => entry.assetType === "stock")).toMatchObject({
+      holdingsCount: 1,
+      valuedHoldingsCount: 1,
+      unvaluedHoldingsCount: 0,
+      marketValue: 100,
+    });
+    expect(allocation.find((entry) => entry.assetType === "stock")?.percentage).toBeUndefined();
+    expect(allocation.find((entry) => entry.assetType === "mutual_fund")).toMatchObject({
+      holdingsCount: 1,
+      valuedHoldingsCount: 0,
+      unvaluedHoldingsCount: 1,
+    });
+    expect(allocation.find((entry) => entry.assetType === "mutual_fund")?.marketValue).toBeUndefined();
+  });
+
+  it("builds holding leaders from position PnL only when PnL exists", () => {
+    const leaders = buildPortfolioHoldingLeaders([
+      {
+        symbol: "RELIANCE-EQ",
+        isin: "INE002A01018",
+        exchangeSegment: "NSE_EQ",
+        quantity: 50,
+        averagePrice: 2200,
+        marketValue: 125255,
+        pnlAbsolute: 15255,
+        pnlPercent: 13.87,
+        sourceBroker: "manual_csv",
+      },
+      {
+        symbol: "UNVALUED-MF",
+        isin: "INF000000000",
+        exchangeSegment: "MF",
+        quantity: 10,
+        averagePrice: 10,
+        sourceBroker: "manual_csv",
+      },
+      {
+        symbol: "TCS-EQ",
+        isin: "INE467B01029",
+        exchangeSegment: "NSE_EQ",
+        quantity: 10,
+        averagePrice: 3900,
+        marketValue: 36000,
+        pnlAbsolute: -3000,
+        pnlPercent: -7.69,
+        sourceBroker: "manual_csv",
+      },
+    ]);
+
+    expect(leaders.topWinners.map((holding) => holding.symbol)).toEqual(["RELIANCE-EQ", "TCS-EQ"]);
+    expect(leaders.topLosers.map((holding) => holding.symbol)).toEqual(["TCS-EQ", "RELIANCE-EQ"]);
+  });
+
   it("assesses a holding against research output", () => {
     const position = {
       symbol: "RELIANCE-EQ",
@@ -200,6 +306,7 @@ describe("portfolio-engine", () => {
       instrumentScore: { total: 60, label: "research_further", reasons: [] },
       portfolioFit: { total: 90, label: "good_fit", reasons: [] },
       memoryContext: { previousVerdict: "watch", previousConviction: 50, notes: [] },
+      knowledgeContext: { query: "RELIANCE", claims: [], notes: [] },
       recommendation: {
         verdict: "buy",
         conviction: 70,

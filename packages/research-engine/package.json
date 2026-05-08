@@ -1,9 +1,9 @@
 {
-  "name": "@tradeai/knowledge",
+  "name": "@tradeai/research-engine",
   "private": true,
   "type": "module",
   "dependencies": {
     "@tradeai/domain": "workspace:*",
-    "effect": "^3.21.0"
+    "@tradeai/strategy-engine": "workspace:*"
   }
 }

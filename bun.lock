@@ -52,6 +52,7 @@
         "@tradeai/data-sources": "workspace:*",
         "@tradeai/db": "workspace:*",
         "@tradeai/domain": "workspace:*",
+        "@tradeai/knowledge": "workspace:*",
         "@tradeai/memory": "workspace:*",
         "@tradeai/observability": "workspace:*",
         "@tradeai/portfolio-engine": "workspace:*",
@@ -64,7 +65,7 @@
       "dependencies": {
         "@tradeai/domain": "workspace:*",
         "@tradeai/market-analysis": "workspace:*",
-        "@tradeai/strategy-engine": "workspace:*",
+        "@tradeai/research-engine": "workspace:*",
         "effect": "^3.21.0",
       },
     },
@@ -74,6 +75,7 @@
         "@tradeai/domain": "workspace:*",
         "@tradeai/memory": "workspace:*",
         "@tradeai/observability": "workspace:*",
+        "@tradeai/portfolio-engine": "workspace:*",
         "drizzle-orm": "^0.45.2",
         "pg": "^8.16.3",
         "pgvector": "^0.2.1",
@@ -88,6 +90,7 @@
     "packages/knowledge": {
       "name": "@tradeai/knowledge",
       "dependencies": {
+        "@tradeai/domain": "workspace:*",
         "effect": "^3.21.0",
       },
     },
@@ -116,6 +119,13 @@
       "name": "@tradeai/portfolio-engine",
       "dependencies": {
         "@tradeai/domain": "workspace:*",
+      },
+    },
+    "packages/research-engine": {
+      "name": "@tradeai/research-engine",
+      "dependencies": {
+        "@tradeai/domain": "workspace:*",
+        "@tradeai/strategy-engine": "workspace:*",
       },
     },
     "packages/strategy-engine": {
@@ -473,6 +483,8 @@
     "@tradeai/observability": ["@tradeai/observability@workspace:packages/observability"],
 
     "@tradeai/portfolio-engine": ["@tradeai/portfolio-engine@workspace:packages/portfolio-engine"],
+
+    "@tradeai/research-engine": ["@tradeai/research-engine@workspace:packages/research-engine"],
 
     "@tradeai/strategy-engine": ["@tradeai/strategy-engine@workspace:packages/strategy-engine"],
 

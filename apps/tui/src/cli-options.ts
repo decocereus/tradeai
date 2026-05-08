@@ -4,6 +4,12 @@ import {
 } from "@tradeai/app-services";
 
 type BrokerSource = "groww" | "indstocks" | "manual_csv";
+type KnowledgeSourceType =
+  | "youtube_transcript"
+  | "buffett_letter"
+  | "personal_note"
+  | "article"
+  | "manual";
 
 export interface TuiCliOptions {
   piPrompt: string | undefined;
@@ -29,6 +35,10 @@ export interface TuiCliOptions {
   importHoldingsPath: string | undefined;
   importTradesPath: string | undefined;
   manualDecisionFlag: boolean;
+  knowledgeFilePath: string | undefined;
+  knowledgeTitle: string | undefined;
+  knowledgeSourceType: KnowledgeSourceType;
+  knowledgeSourceError: string | undefined;
   jsonFlag: boolean;
   rawFlag: boolean;
   hasExplicitPrimaryAction: boolean;
@@ -61,6 +71,17 @@ const parseBrokerSource = (value: string | undefined): BrokerSource | undefined 
     : undefined;
 };
 
+const parseKnowledgeSourceType = (value: string | undefined): KnowledgeSourceType | undefined => {
+  const normalized = value?.trim().toLowerCase();
+  return normalized === "youtube_transcript" ||
+    normalized === "buffett_letter" ||
+    normalized === "personal_note" ||
+    normalized === "article" ||
+    normalized === "manual"
+    ? normalized
+    : undefined;
+};
+
 export const parseTuiCliOptions = (args: readonly string[]): TuiCliOptions => {
   const piPrompt = readTrailingText(args, "--pi", "Summarize this repo.");
   const amfiQuery = readTrailingText(args, "--amfi", "parag parikh");
@@ -78,6 +99,14 @@ export const parseTuiCliOptions = (args: readonly string[]): TuiCliOptions => {
   const holdingHistorySymbol = readNextValue(args, "--holding-history", "RELIANCE-EQ");
   const importHoldingsPath = readNextValue(args, "--import-holdings", "");
   const importTradesPath = readNextValue(args, "--import-trades", "");
+  const knowledgeFilePath = readNextValue(args, "--knowledge-file", "");
+  const knowledgeTitle = readNextValue(args, "--knowledge-title", "");
+  const rawKnowledgeSourceType = readNextValue(args, "--knowledge-source", "personal_note");
+  const knowledgeSourceType = parseKnowledgeSourceType(rawKnowledgeSourceType) ?? "personal_note";
+  const knowledgeSourceError =
+    rawKnowledgeSourceType && !parseKnowledgeSourceType(rawKnowledgeSourceType)
+      ? "Invalid knowledge source. Expected youtube_transcript, buffett_letter, personal_note, article, or manual."
+      : undefined;
   const jsonFlag = args.includes("--json");
   const rawFlag = args.includes("--raw");
   const holdingsFlag = args.includes("--holdings");
@@ -114,7 +143,8 @@ export const parseTuiCliOptions = (args: readonly string[]): TuiCliOptions => {
     dailyFlag ||
     Boolean(holdingHistorySymbol) ||
     Boolean(importHoldingsPath) ||
-    manualDecisionFlag;
+    manualDecisionFlag ||
+    Boolean(knowledgeFilePath);
 
   return {
     piPrompt,
@@ -140,6 +170,10 @@ export const parseTuiCliOptions = (args: readonly string[]): TuiCliOptions => {
     importHoldingsPath,
     importTradesPath,
     manualDecisionFlag,
+    knowledgeFilePath,
+    knowledgeTitle,
+    knowledgeSourceType,
+    knowledgeSourceError,
     jsonFlag,
     rawFlag,
     hasExplicitPrimaryAction,

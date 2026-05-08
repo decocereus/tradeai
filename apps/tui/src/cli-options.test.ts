@@ -72,4 +72,33 @@ describe("tui cli options", () => {
     expect(options.rawFlag).toBe(true);
     expect(options.hasExplicitPrimaryAction).toBe(true);
   });
+
+  it("parses knowledge ingestion flags", () => {
+    const options = parseTuiCliOptions([
+      "--knowledge-file",
+      "/tmp/thesis.md",
+      "--knowledge-title",
+      "Reliance thesis",
+      "--knowledge-source",
+      "personal_note",
+    ]);
+
+    expect(options.knowledgeFilePath).toBe("/tmp/thesis.md");
+    expect(options.knowledgeTitle).toBe("Reliance thesis");
+    expect(options.knowledgeSourceType).toBe("personal_note");
+    expect(options.knowledgeSourceError).toBeUndefined();
+    expect(options.hasExplicitPrimaryAction).toBe(true);
+  });
+
+  it("rejects invalid knowledge source flags", () => {
+    const options = parseTuiCliOptions([
+      "--knowledge-file",
+      "/tmp/thesis.md",
+      "--knowledge-source",
+      "telegram",
+    ]);
+
+    expect(options.knowledgeSourceType).toBe("personal_note");
+    expect(options.knowledgeSourceError).toContain("Invalid knowledge source");
+  });
 });

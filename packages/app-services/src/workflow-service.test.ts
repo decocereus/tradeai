@@ -1,5 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import type { BrokerHolding, BrokerTradeFill, MemoryContext } from "@tradeai/domain";
+import { buildKnowledgeDocument } from "@tradeai/knowledge";
+import type { MemoryContextInput } from "@tradeai/memory";
 import { Effect } from "effect";
 
 import { customResearchPacket } from "./test-fixtures.ts";
@@ -18,14 +20,6 @@ describe("app-services / workflow service", () => {
     expect(tradeAi.reviewBrokerHoldingsAgainstResearch).toBeFunction();
     expect(tradeAi.getPortfolioDashboard).toBeFunction();
     expect(tradeAi.importManualPortfolioSnapshot).toBeFunction();
-  });
-
-  it("runs the explicit demo snapshot through the service port", async () => {
-    const tradeAi = createTradeAiWorkflowService();
-    const result = await Effect.runPromise(tradeAi.runDemoResearchSnapshot());
-
-    expect(result.instrument.symbol).toBe("DEMO");
-    expect(result.researchQuality.source).toBe("demo");
   });
 
   it("applies runtime config and injected ports at the service boundary", async () => {
@@ -251,6 +245,97 @@ describe("app-services / workflow service", () => {
     ]);
   });
 
+  it("loads persisted review history into research memory when database config is explicit", async () => {
+    const memoryInputs: MemoryContextInput[] = [];
+    const tradeAi = createTradeAiWorkflowService({
+      config: {
+        databaseUrl: "postgres://tradeai-test",
+      },
+      researchSources: {
+        buildEquityResearchPacket: () => Effect.succeed(customResearchPacket),
+      },
+      memorySource: {
+        loadMemoryContext: (input) => {
+          memoryInputs.push(input ?? {});
+          return Effect.succeed({
+            previousVerdict: input?.history?.[0]?.verdict ?? "watch",
+            previousConviction: input?.history?.[0]?.conviction ?? 50,
+            notes: input?.history?.map((entry) => entry.reason) ?? [],
+          });
+        },
+      },
+      repositories: {
+        hasConfiguredDatabaseUrl: () => true,
+        loadHoldingReviewHistory: (symbol) =>
+          Promise.resolve(
+            symbol === "RELIANCE-EQ"
+              ? [
+                  {
+                    snapshotId: "manual_csv:2026-05-06T00:00:00.000Z",
+                    symbol: "RELIANCE-EQ",
+                    query: "RELIANCE",
+                    status: "aligned",
+                    reason: "Prior review supported the holding.",
+                    verdict: "buy",
+                    conviction: 66,
+                    reviewedAt: "2026-05-06T00:00:00.000Z",
+                  },
+                ]
+              : [],
+          ),
+        loadKnowledgeDocuments: () => Promise.resolve([]),
+      },
+    });
+
+    const result = await Effect.runPromise(tradeAi.runEquityResearch({ query: "RELIANCE" }));
+
+    expect(result.memoryContext.previousVerdict).toBe("buy");
+    expect(result.memoryContext.previousConviction).toBe(66);
+    expect(memoryInputs[0]?.history?.[0]?.symbol).toBe("RELIANCE-EQ");
+  });
+
+  it("loads persisted knowledge claims into research memory when database config is explicit", async () => {
+    const tradeAi = createTradeAiWorkflowService({
+      config: {
+        databaseUrl: "postgres://tradeai-test",
+      },
+      researchSources: {
+        buildEquityResearchPacket: () => Effect.succeed(customResearchPacket),
+      },
+      memorySource: {
+        loadMemoryContext: () =>
+          Effect.succeed({
+            previousVerdict: "watch",
+            previousConviction: 50,
+            notes: ["history loaded"],
+          }),
+      },
+      repositories: {
+        hasConfiguredDatabaseUrl: () => true,
+        loadHoldingReviewHistory: () => Promise.resolve([]),
+        loadKnowledgeDocuments: () =>
+          Promise.resolve([
+            buildKnowledgeDocument(
+              {
+                sourceType: "personal_note",
+                title: "Reliance thesis discipline",
+                body: "Reliance exposure should require clear cash-flow visibility and balance-sheet discipline before adding more capital.",
+                metadata: { tags: ["reliance", "risk"] },
+              },
+              new Date("2026-05-08T00:00:00.000Z"),
+            ),
+          ]),
+      },
+    });
+
+    const result = await Effect.runPromise(tradeAi.runEquityResearch({ query: "RELIANCE" }));
+
+    expect(result.memoryContext.notes).toContain("history loaded");
+    expect(result.memoryContext.notes.some((note) => note.includes("balance-sheet discipline"))).toBe(false);
+    expect(result.knowledgeContext.claims[0]?.claim).toContain("balance-sheet discipline");
+    expect(result.knowledgeContext.claims[0]?.provenance).toContain("Reliance thesis discipline");
+  });
+
   it("uses Groww market sources by default", async () => {
     const calls: string[] = [];
     const tradeAi = createTradeAiWorkflowService({
@@ -278,6 +363,36 @@ describe("app-services / workflow service", () => {
     expect(quotes[0]?.instrumentKey).toBe("NSE_RELIANCE");
     expect(quotes[0]?.tradingSymbol).toBe("RELIANCE");
     expect(calls).toEqual(["quotes:RELIANCE:groww-token"]);
+  });
+
+  it("exposes knowledge ingestion through the service port", async () => {
+    const persisted: string[] = [];
+    const tradeAi = createTradeAiWorkflowService({
+      config: {
+        databaseUrl: "postgres://tradeai-test",
+      },
+      repositories: {
+        hasConfiguredDatabaseUrl: (databaseUrl) => databaseUrl === "postgres://tradeai-test",
+        persistKnowledgeDocument: async (document, databaseUrl) => {
+          persisted.push(`${document.title}:${databaseUrl}`);
+          return {
+            documentId: document.id,
+            documentsInserted: 1,
+          };
+        },
+      },
+    });
+
+    const report = await Effect.runPromise(
+      tradeAi.ingestKnowledgeDocument({
+        sourceType: "personal_note",
+        title: "Sizing rule",
+        body: "Keep sizing conservative when evidence is incomplete.",
+      }),
+    );
+
+    expect(report.persistence.documentsInserted).toBe(1);
+    expect(persisted).toEqual(["Sizing rule:postgres://tradeai-test"]);
   });
 
   it("deduplicates and caps quote snapshot inputs at the workflow boundary", async () => {
@@ -366,6 +481,13 @@ describe("app-services / workflow service", () => {
         message: "Groww quote failed for BROKEN",
       },
     ]);
+
+    const batch = await Effect.runPromise(
+      tradeAi.getEquityQuoteSnapshotBatch({ instrumentKeys: ["RELIANCE", "BROKEN"] }),
+    );
+    expect(batch.status).toBe("partial");
+    expect(batch.snapshots).toEqual(partialError.snapshots);
+    expect(batch.failures).toEqual(partialError.failures);
   });
 
   it("uses Aftermarkets research sources when configured", async () => {

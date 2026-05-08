@@ -5,6 +5,7 @@ import { buildPortfolioMemorySnapshot } from "@tradeai/memory";
 
 import {
   extractPortfolioSnapshotHeaders,
+  materializeKnowledgeDocument,
   materializePortfolioMemorySnapshot,
   resolvePreferredPortfolioDashboardBroker,
 } from "./repository.ts";
@@ -107,5 +108,31 @@ describe("db / repository helpers", () => {
     expect(resolvePreferredPortfolioDashboardBroker(headers)).toBe("groww");
     expect(resolvePreferredPortfolioDashboardBroker(headers, "indstocks")).toBe("indstocks");
     expect(resolvePreferredPortfolioDashboardBroker(headers, "manual_csv", true)).toBe("manual_csv");
+  });
+
+  it("materializes persisted knowledge documents with safe metadata", () => {
+    const document = materializeKnowledgeDocument({
+      id: "knowledge:personal_note:1",
+      sourceType: "personal_note",
+      title: "Position sizing",
+      body: "Keep position sizing aligned with drawdown tolerance.",
+      metadata: { tags: ["risk"] },
+      createdAt: new Date("2026-05-08T00:00:00.000Z"),
+    });
+
+    expect(document.sourceType).toBe("personal_note");
+    expect(document.metadata).toEqual({ tags: ["risk"] });
+    expect(document.createdAt).toBe("2026-05-08T00:00:00.000Z");
+
+    const malformed = materializeKnowledgeDocument({
+      id: "knowledge:manual:1",
+      sourceType: "manual",
+      title: "Malformed metadata",
+      body: "Metadata must remain object-shaped.",
+      metadata: ["not", "object"],
+      createdAt: new Date("2026-05-08T00:00:00.000Z"),
+    });
+
+    expect(malformed.metadata).toEqual({});
   });
 });

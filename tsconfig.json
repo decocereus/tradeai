@@ -46,6 +46,9 @@
       "@tradeai/portfolio-engine": [
         "./packages/portfolio-engine/src/index.ts"
       ],
+      "@tradeai/research-engine": [
+        "./packages/research-engine/src/index.ts"
+      ],
       "@tradeai/strategy-engine": [
         "./packages/strategy-engine/src/index.ts"
       ]

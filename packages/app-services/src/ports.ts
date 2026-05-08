@@ -8,7 +8,6 @@ import {
   fetchGrowwTradeBook,
   fetchIndstocksHoldings,
   fetchIndstocksTradeBook,
-  loadDemoResearchPacket,
   searchAmfiNavEntries,
   searchBseAnnouncements,
   searchGrowwInstrumentProfiles,
@@ -16,9 +15,11 @@ import {
 } from "@tradeai/data-sources";
 import {
   hasConfiguredDatabaseUrl,
+  loadKnowledgeDocuments,
   loadHoldingReviewHistory,
   loadLatestPortfolioSnapshot,
   loadPreferredPortfolioDashboardRepositoryData,
+  persistKnowledgeDocumentToDatabase,
   persistHoldingReviewReportToDatabase,
   persistPortfolioSnapshotToDatabase,
   type PortfolioDashboardRepositoryData,
@@ -39,8 +40,11 @@ import type {
   EquityInstrumentProfile,
   EquityQuoteEntry,
   EquityQuoteSnapshot,
+  KnowledgeContext,
+  KnowledgeDocument,
 } from "@tradeai/domain";
-import { loadMemoryContext } from "@tradeai/memory";
+import { loadKnowledgeContext, type KnowledgeRetrievalInput } from "@tradeai/knowledge";
+import { loadMemoryContext, type MemoryContextInput } from "@tradeai/memory";
 import { Effect } from "effect";
 
 export interface TradeAiRuntimeConfig {
@@ -53,7 +57,6 @@ export interface TradeAiRuntimeConfig {
   growwAccessToken?: string;
   aftermarketsApiKey?: string;
   databaseUrl?: string;
-  allowPublicResearchFallback?: boolean;
   persistPortfolioSnapshots?: boolean;
 }
 
@@ -86,13 +89,9 @@ export interface TradeAiMarketSources {
 }
 
 export interface TradeAiResearchSources {
-  loadDemoResearchPacket: () => Effect.Effect<ResearchPacket, Error>;
   buildEquityResearchPacket: (input: {
     query: string;
     accessToken?: string;
-  }) => Effect.Effect<ResearchPacket, Error>;
-  buildPublicEquityResearchPacket: (input: {
-    query: string;
   }) => Effect.Effect<ResearchPacket, Error>;
   buildBrokerPositionResearchPacket: (input: {
     position: PortfolioPositionSnapshot;
@@ -101,7 +100,11 @@ export interface TradeAiResearchSources {
 }
 
 export interface TradeAiMemorySource {
-  loadMemoryContext: () => Effect.Effect<MemoryContext, Error>;
+  loadMemoryContext: (input?: MemoryContextInput) => Effect.Effect<MemoryContext, Error>;
+}
+
+export interface TradeAiKnowledgeSource {
+  loadKnowledgeContext: (input: KnowledgeRetrievalInput) => Effect.Effect<KnowledgeContext, Error>;
 }
 
 export interface PortfolioSnapshotPersistenceResult {
@@ -112,6 +115,11 @@ export interface PortfolioSnapshotPersistenceResult {
 
 export interface HoldingReviewPersistenceResult {
   reviewsInserted: number;
+}
+
+export interface KnowledgeDocumentPersistenceResult {
+  documentId: string;
+  documentsInserted: number;
 }
 
 export interface TradeAiRepositories {
@@ -127,14 +135,22 @@ export interface TradeAiRepositories {
   ) => Promise<PortfolioSnapshotPersistenceResult>;
   loadHoldingReviewHistory: (
     symbol: string,
-    broker: BrokerSource,
+    broker?: BrokerSource,
     databaseUrl?: string,
   ) => Promise<HoldingReviewHistoryEntry[]>;
+  loadKnowledgeDocuments: (
+    databaseUrl?: string,
+    limit?: number,
+  ) => Promise<KnowledgeDocument[]>;
   persistHoldingReviewReport: (
     snapshotId: string,
     review: BrokerPortfolioReviewReport,
     databaseUrl?: string,
   ) => Promise<HoldingReviewPersistenceResult>;
+  persistKnowledgeDocument: (
+    document: KnowledgeDocument,
+    databaseUrl?: string,
+  ) => Promise<KnowledgeDocumentPersistenceResult>;
   loadPortfolioDashboardData: (
     preferredBroker: BrokerSource | undefined,
     databaseUrl: string | undefined,
@@ -148,6 +164,7 @@ export interface TradeAiWorkflowDependencies {
   marketSources: TradeAiMarketSources;
   researchSources: TradeAiResearchSources;
   memorySource: TradeAiMemorySource;
+  knowledgeSource: TradeAiKnowledgeSource;
   repositories: TradeAiRepositories;
 }
 
@@ -157,6 +174,7 @@ export interface CreateTradeAiWorkflowServiceOptions {
   marketSources?: Partial<TradeAiMarketSources>;
   researchSources?: Partial<TradeAiResearchSources>;
   memorySource?: Partial<TradeAiMemorySource>;
+  knowledgeSource?: Partial<TradeAiKnowledgeSource>;
   repositories?: Partial<TradeAiRepositories>;
 }
 
@@ -187,17 +205,18 @@ export const defaultTradeAiMarketSources: TradeAiMarketSources = {
 };
 
 export const defaultTradeAiResearchSources: TradeAiResearchSources = {
-  loadDemoResearchPacket: () => loadDemoResearchPacket,
   buildEquityResearchPacket: (input) =>
-    buildAftermarketsResearchPacket({ query: input.query }),
-  buildPublicEquityResearchPacket: (input) =>
     buildAftermarketsResearchPacket({ query: input.query }),
   buildBrokerPositionResearchPacket: (input) =>
     buildAftermarketsResearchPacket({ query: input.position.symbol }),
 };
 
 export const defaultTradeAiMemorySource: TradeAiMemorySource = {
-  loadMemoryContext: () => loadMemoryContext,
+  loadMemoryContext: (input) => loadMemoryContext(input),
+};
+
+export const defaultTradeAiKnowledgeSource: TradeAiKnowledgeSource = {
+  loadKnowledgeContext: (input) => loadKnowledgeContext(input),
 };
 
 export const defaultTradeAiRepositories: TradeAiRepositories = {
@@ -205,7 +224,9 @@ export const defaultTradeAiRepositories: TradeAiRepositories = {
   loadLatestPortfolioSnapshot,
   persistPortfolioSnapshot: persistPortfolioSnapshotToDatabase,
   loadHoldingReviewHistory,
+  loadKnowledgeDocuments,
   persistHoldingReviewReport: persistHoldingReviewReportToDatabase,
+  persistKnowledgeDocument: persistKnowledgeDocumentToDatabase,
   loadPortfolioDashboardData: loadPreferredPortfolioDashboardRepositoryData,
 };
 
@@ -213,11 +234,6 @@ const createAftermarketsResearchSources = (
   config: TradeAiRuntimeConfig,
 ): Partial<TradeAiResearchSources> => ({
   buildEquityResearchPacket: (input) =>
-    buildAftermarketsResearchPacket({
-      query: input.query,
-      ...(config.aftermarketsApiKey ? { apiKey: config.aftermarketsApiKey } : {}),
-    }),
-  buildPublicEquityResearchPacket: (input) =>
     buildAftermarketsResearchPacket({
       query: input.query,
       ...(config.aftermarketsApiKey ? { apiKey: config.aftermarketsApiKey } : {}),
@@ -255,6 +271,10 @@ export const createTradeAiWorkflowDependencies = (
   memorySource: {
     ...defaultTradeAiMemorySource,
     ...options.memorySource,
+  },
+  knowledgeSource: {
+    ...defaultTradeAiKnowledgeSource,
+    ...options.knowledgeSource,
   },
   repositories: {
     ...defaultTradeAiRepositories,

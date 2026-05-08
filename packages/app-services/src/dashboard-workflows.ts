@@ -1,21 +1,23 @@
 import type {
-  AssetType,
   BrokerPortfolioReviewReport,
   BrokerSource,
   HoldingResearchReview,
   HoldingReviewHistoryEntry,
   HoldingReviewTrend,
   HoldingStatusChange,
-  PortfolioAssetAllocation,
   PortfolioDashboardReport,
   PortfolioHoldingSnapshotSummary,
-  PortfolioPositionSnapshot,
   TodayActionItem,
 } from "@tradeai/domain";
 import {
   diffPortfolioMemorySnapshots,
   summarizeHoldingReviewTrend,
 } from "@tradeai/memory";
+import {
+  buildAssetAllocation,
+  buildPortfolioHoldingLeaders,
+  toPortfolioHoldingSnapshotSummary,
+} from "@tradeai/portfolio-engine";
 import { Effect } from "effect";
 
 import {
@@ -27,20 +29,7 @@ import { buildBrokerPortfolioReviewReport } from "./review-workflows.ts";
 const DASHBOARD_SNAPSHOT_LIMIT = 5;
 const DASHBOARD_REVIEW_LIMIT = 5;
 const DASHBOARD_STREAK_LIMIT = 5;
-const DASHBOARD_HOLDING_LIMIT = 5;
 const defaultDependencies = createTradeAiWorkflowDependencies();
-
-const resolvePositionAssetType = (position: PortfolioPositionSnapshot): AssetType => {
-  if (position.assetType) return position.assetType;
-  if (position.exchangeSegment === "MF") return "mutual_fund";
-
-  const symbol = position.symbol.toUpperCase();
-  const name = position.instrumentName?.toUpperCase() ?? "";
-  const isin = position.isin.toUpperCase();
-  if (symbol.includes("GOLD") || name.includes("GOLD")) return "gold";
-  if (symbol.endsWith("BEES") || isin.startsWith("INF")) return "etf";
-  return "stock";
-};
 
 const toHoldingResearchReview = (entry: HoldingReviewHistoryEntry): HoldingResearchReview => ({
   symbol: entry.symbol,
@@ -51,84 +40,6 @@ const toHoldingResearchReview = (entry: HoldingReviewHistoryEntry): HoldingResea
   ...(entry.conviction !== undefined ? { conviction: entry.conviction } : {}),
   ...(entry.runLabel ? { runLabel: entry.runLabel } : {}),
   ...(entry.researchQuality ? { researchQuality: entry.researchQuality } : {}),
-});
-
-const toPortfolioHoldingSnapshotSummary = (
-  position: PortfolioPositionSnapshot,
-): PortfolioHoldingSnapshotSummary => ({
-  symbol: position.symbol,
-  assetType: resolvePositionAssetType(position),
-  ...(position.instrumentName ? { instrumentName: position.instrumentName } : {}),
-  ...(position.marketValue !== undefined ? { marketValue: position.marketValue } : {}),
-  ...(position.pnlAbsolute !== undefined ? { pnlAbsolute: position.pnlAbsolute } : {}),
-  ...(position.pnlPercent !== undefined ? { pnlPercent: position.pnlPercent } : {}),
-  quantity: position.quantity,
-  ...(position.priceProvenance ? { priceProvenance: position.priceProvenance } : {}),
-});
-
-export const buildAssetAllocation = (
-  positions: readonly PortfolioPositionSnapshot[],
-): PortfolioAssetAllocation[] => {
-  const valuedPositions = positions.filter(
-    (position): position is PortfolioPositionSnapshot & { marketValue: number } =>
-      position.marketValue !== undefined,
-  );
-  const totalMarketValue = valuedPositions.reduce(
-    (sum, position) => sum + position.marketValue,
-    0,
-  );
-  const hasUnvaluedPositions = valuedPositions.length !== positions.length;
-  const byAssetType = new Map<PortfolioAssetAllocation["assetType"], {
-    holdingsCount: number;
-    valuedHoldingsCount: number;
-    unvaluedHoldingsCount: number;
-    marketValue: number;
-  }>();
-
-  for (const position of positions) {
-    const assetType = resolvePositionAssetType(position);
-    const current = byAssetType.get(assetType) ?? {
-      holdingsCount: 0,
-      valuedHoldingsCount: 0,
-      unvaluedHoldingsCount: 0,
-      marketValue: 0,
-    };
-    const hasMarketValue = position.marketValue !== undefined;
-    byAssetType.set(assetType, {
-      holdingsCount: current.holdingsCount + 1,
-      valuedHoldingsCount: current.valuedHoldingsCount + (hasMarketValue ? 1 : 0),
-      unvaluedHoldingsCount: current.unvaluedHoldingsCount + (hasMarketValue ? 0 : 1),
-      marketValue: current.marketValue + (hasMarketValue ? position.marketValue : 0),
-    });
-  }
-
-  return [...byAssetType.entries()]
-    .map(([assetType, value]) => ({
-      assetType,
-      holdingsCount: value.holdingsCount,
-      valuedHoldingsCount: value.valuedHoldingsCount,
-      unvaluedHoldingsCount: value.unvaluedHoldingsCount,
-      ...(value.valuedHoldingsCount > 0 ? { marketValue: value.marketValue } : {}),
-      ...(!hasUnvaluedPositions && totalMarketValue > 0
-        ? { percentage: (value.marketValue / totalMarketValue) * 100 }
-        : {}),
-    }))
-    .sort((left, right) => (right.marketValue ?? 0) - (left.marketValue ?? 0));
-};
-
-export const buildPortfolioHoldingLeaders = (
-  positions: readonly PortfolioPositionSnapshot[],
-) => ({
-  topWinners: [...positions]
-    .filter((position) => position.pnlPercent !== undefined)
-    .sort((left, right) => (right.pnlPercent ?? 0) - (left.pnlPercent ?? 0))
-    .slice(0, DASHBOARD_HOLDING_LIMIT)
-    .map(toPortfolioHoldingSnapshotSummary),
-  topLosers: [...positions]
-    .filter((position) => position.pnlPercent !== undefined)
-    .sort((left, right) => (left.pnlPercent ?? 0) - (right.pnlPercent ?? 0))
-    .slice(0, DASHBOARD_HOLDING_LIMIT)
-    .map(toPortfolioHoldingSnapshotSummary),
 });
 
 export const buildHoldingStatusChanges = (

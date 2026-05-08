@@ -3,14 +3,17 @@ import type {
   BrokerTradeFill,
   BrokerPortfolioReviewReport,
   HoldingReviewHistoryEntry,
+  KnowledgeDocument,
+  KnowledgeSourceType,
   PortfolioMemorySnapshot,
   PortfolioPositionSnapshot,
   PortfolioSnapshotReference,
 } from "@tradeai/domain";
+import { summarizePortfolioPositions } from "@tradeai/portfolio-engine";
 import { and, desc, eq, inArray, max } from "drizzle-orm";
 
 import { createDatabaseConnection } from "./client.ts";
-import { brokerTradeFills, holdingReviews, portfolioPositions } from "./index.ts";
+import { brokerTradeFills, holdingReviews, knowledgeDocuments, portfolioPositions } from "./index.ts";
 import {
   serializeBrokerTradeBook,
   serializePortfolioSnapshot,
@@ -42,6 +45,15 @@ interface PortfolioSnapshotHeaderRowLike {
   snapshotId: string;
   broker: string;
   capturedAt: Date | string | null;
+}
+
+export interface KnowledgeDocumentRowLike {
+  id: string;
+  sourceType: string;
+  title: string;
+  body: string;
+  metadata: unknown;
+  createdAt: Date;
 }
 
 export interface PortfolioDashboardRepositoryData {
@@ -85,50 +97,13 @@ export const materializePortfolioMemorySnapshot = (
   if (!first) return undefined;
 
   const positions = rows.map((row) => row.payload);
-  const valuedPositions = positions.filter(
-    (position): position is PortfolioPositionSnapshot & { marketValue: number } =>
-      position.marketValue !== undefined,
-  );
-  const pnlValuedPositions = valuedPositions.filter(
-    (position): position is PortfolioPositionSnapshot & { marketValue: number; pnlAbsolute: number } =>
-      position.pnlAbsolute !== undefined,
-  );
-  const totalMarketValue = valuedPositions.reduce(
-    (sum, position) => sum + position.marketValue,
-    0,
-  );
-  const totalPnlAbsolute = pnlValuedPositions.reduce(
-    (sum, position) => sum + position.pnlAbsolute,
-    0,
-  );
-  const hasCompletePnl =
-    valuedPositions.length > 0 && pnlValuedPositions.length === valuedPositions.length;
-  const weightedPnlPercent =
-    hasCompletePnl && totalMarketValue > 0
-      ? (totalPnlAbsolute / totalMarketValue) * 100
-      : undefined;
-  const sortedByPnl = positions
-    .filter((position) => position.pnlPercent !== undefined)
-    .sort((left, right) => (right.pnlPercent ?? 0) - (left.pnlPercent ?? 0));
 
   return {
     snapshotId: first.snapshotId,
     broker: first.broker as BrokerSource,
     capturedAt: first.createdAt.toISOString(),
     positions,
-    summary: {
-      holdingsCount: positions.length,
-      valuedHoldingsCount: valuedPositions.length,
-      unvaluedHoldingsCount: positions.length - valuedPositions.length,
-      ...(valuedPositions.length > 0
-        ? {
-            totalMarketValue,
-            ...(hasCompletePnl ? { totalPnlAbsolute, weightedPnlPercent } : {}),
-          }
-        : {}),
-      ...(sortedByPnl[0] ? { topWinnerSymbol: sortedByPnl[0].symbol } : {}),
-      ...(sortedByPnl.at(-1) ? { topLoserSymbol: sortedByPnl.at(-1)?.symbol } : {}),
-    },
+    summary: summarizePortfolioPositions(positions),
   };
 };
 
@@ -425,6 +400,69 @@ export const loadHoldingReviewHistory = async (
     const rows = await baseQuery;
 
     return (rows as HoldingReviewRowLike[]).map((row) => row.payload);
+  } finally {
+    await pool.end();
+  }
+};
+
+export const materializeKnowledgeDocument = (row: KnowledgeDocumentRowLike): KnowledgeDocument => ({
+  id: row.id,
+  sourceType: row.sourceType as KnowledgeSourceType,
+  title: row.title,
+  body: row.body,
+  metadata:
+    row.metadata && typeof row.metadata === "object" && !Array.isArray(row.metadata)
+      ? (row.metadata as Record<string, unknown>)
+      : {},
+  createdAt: row.createdAt.toISOString(),
+});
+
+export const persistKnowledgeDocumentToDatabase = async (
+  document: KnowledgeDocument,
+  databaseUrl?: string,
+) => {
+  const { db, pool } = createDatabaseConnection(databaseUrl);
+
+  try {
+    await db.insert(knowledgeDocuments).values({
+      id: document.id,
+      sourceType: document.sourceType,
+      title: document.title,
+      body: document.body,
+      metadata: document.metadata,
+      createdAt: new Date(document.createdAt),
+    });
+
+    return {
+      documentId: document.id,
+      documentsInserted: 1,
+    };
+  } finally {
+    await pool.end();
+  }
+};
+
+export const loadKnowledgeDocuments = async (
+  databaseUrl?: string,
+  limit = 50,
+) => {
+  const { db, pool } = createDatabaseConnection(databaseUrl);
+
+  try {
+    const rows = await db
+      .select({
+        id: knowledgeDocuments.id,
+        sourceType: knowledgeDocuments.sourceType,
+        title: knowledgeDocuments.title,
+        body: knowledgeDocuments.body,
+        metadata: knowledgeDocuments.metadata,
+        createdAt: knowledgeDocuments.createdAt,
+      })
+      .from(knowledgeDocuments)
+      .orderBy(desc(knowledgeDocuments.createdAt))
+      .limit(limit);
+
+    return (rows as KnowledgeDocumentRowLike[]).map(materializeKnowledgeDocument);
   } finally {
     await pool.end();
   }

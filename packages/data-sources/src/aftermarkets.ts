@@ -1,4 +1,4 @@
-import type { ResearchPacket, ResearchQuality, TechnicalAnalysisSnapshot } from "@tradeai/domain";
+import { buildAftermarketsResearchPacketFromStockDetail } from "@tradeai/research-engine";
 import { Effect } from "effect";
 
 export const AFTERMARKETS_API_KEY_ENV = "AFTERMARKETS_API_KEY";
@@ -170,97 +170,6 @@ export const getAftermarketsStockDetail = (
     fetchImpl,
   });
 
-const clampScore = (value: number, min = 0, max = 100) =>
-  Math.max(min, Math.min(max, Math.round(value)));
-
-const readDimensionScore = (
-  detail: AftermarketsStockDetailData,
-  type: string,
-  fallback: number,
-) => detail.checklist?.dimensions?.find((dimension) => dimension.type === type)?.score ?? fallback;
-
-const inferTrend = (
-  technicals: AftermarketsStockDetailData["technicals"] | undefined,
-): TechnicalAnalysisSnapshot["trend"] => {
-  if (technicals?.macdTrend === "bullish") return "bullish";
-  if (technicals?.macdTrend === "bearish") return "bearish";
-  return "rangebound";
-};
-
-export const buildResearchPacketFromAftermarketsStockDetail = (
-  envelope: AftermarketsStockDetailEnvelope,
-): ResearchPacket => {
-  const detail = envelope.data;
-  const stock = detail?.stock;
-  if (!detail || !stock?.symbol || !stock.name) {
-    throw new Error("Aftermarkets stock detail response is missing stock identity.");
-  }
-
-  const technicalAnalysis =
-    typeof stock.price === "number"
-      ? ({
-          latestClose: stock.price,
-          sma20: detail.technicals?.sma20,
-          sma50: detail.technicals?.sma50,
-          rsi14: detail.technicals?.rsi14,
-          oneDayReturnPct: stock.changePct,
-          oneMonthReturnPct: stock.return1m,
-          trend: inferTrend(detail.technicals),
-        } satisfies TechnicalAnalysisSnapshot)
-      : undefined;
-  const missingSignals: ResearchQuality["missingSignals"] = [
-    ...(detail.fundamentals ? [] : ["fundamentals" as const]),
-    ...(technicalAnalysis ? [] : ["candles" as const]),
-    "events",
-    "memory",
-  ];
-
-  return {
-    runLabel: `aftermarkets-${stock.symbol.toLowerCase()}-research`,
-    source: "aftermarkets",
-    sector: {
-      slug: stock.industry?.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") ||
-        "unclassified",
-      name: stock.industry || "Unclassified",
-      macroTailwind: 50,
-      policySupport: 50,
-      geopoliticalEffect: 50,
-      upcomingCatalysts: readDimensionScore(detail, "performance", 50),
-      sectorSentiment: clampScore(50 + (stock.changePct ?? 0) * 2),
-      structuralDurability: readDimensionScore(detail, "risk", 50),
-      regulatoryRisk: 50,
-    },
-    instrument: {
-      symbol: stock.symbol,
-      name: stock.name,
-      sectorSlug: stock.industry?.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") ||
-        "unclassified",
-      assetType: "stock",
-      financialQuality: readDimensionScore(detail, "growth", 50),
-      businessQuality: readDimensionScore(detail, "profitability", 50),
-      managementGovernance: clampScore(
-        45 +
-          (detail.fundamentals?.roe ?? 0) / 3 +
-          (detail.fundamentals?.debtEquity !== undefined
-            ? Math.max(-8, 6 - detail.fundamentals.debtEquity * 10)
-            : 0),
-      ),
-      sectorAlignment: 50,
-      stabilityProfile: readDimensionScore(detail, "risk", 50),
-      upsidePotential: readDimensionScore(detail, "valuation", 50),
-      currentEventContext: readDimensionScore(detail, "technicals", 50),
-    },
-    portfolioExposures: [],
-    ...(technicalAnalysis ? { technicalAnalysis } : {}),
-    researchQuality: {
-      source: "aftermarkets",
-      completeness: missingSignals.length <= 2 ? "partial" : "minimal",
-      missingSignals,
-      fallbacksUsed: ["neutral_score_defaults"],
-    },
-  };
-};
-
 export const buildAftermarketsResearchPacket = (input: AftermarketsResearchPacketInput) =>
   Effect.gen(function* () {
     const detail = yield* getAftermarketsStockDetail(
@@ -268,5 +177,5 @@ export const buildAftermarketsResearchPacket = (input: AftermarketsResearchPacke
       input.apiKey ? { apiKey: input.apiKey } : {},
       input.fetchImpl ?? fetch,
     );
-    return buildResearchPacketFromAftermarketsStockDetail(detail);
+    return buildAftermarketsResearchPacketFromStockDetail(detail);
   });
